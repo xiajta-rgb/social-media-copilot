@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>亚马逊插件</title>
+    <style>
+        body {
+            width: 280px;
+            padding: 16px;
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+        }
+        h1 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 16px;
+        }
+        p {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+        .button {
+            background-color: #f0c14b;
+            border: 1px solid #a88734;
+            color: #111;
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 3px;
+            width: 100%;
+            text-align: center;
+        }
+        .button:hover {
+            background-color: #e0b13a;
+        }
+        .instructions {
+            margin-top: 20px;
+            text-align: left;
+            font-size: 12px;
+            color: #777;
+        }
+        .instructions h3 {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 8px;
+        }
+        .instructions ul {
+            padding-left: 20px;
+            margin: 0;
+        }
+        .instructions li {
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>亚马逊品牌和URL插件</h1>
+        <p>访问亚马逊商品页面时，插件会自动运行</p>
+        <button class="button" id="copyButton">复制当前页面信息</button>
+        <button class="button" id="showColorButton">显示颜色标签</button>
+        <div class="instructions">
+            <h3>功能说明：</h3>
+            <ul>
+                <li>点击按钮显示商品颜色名称</li>
+                <li>优化颜色选择器布局</li>
+                <li>一键复制品牌和URL</li>
+            </ul>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>

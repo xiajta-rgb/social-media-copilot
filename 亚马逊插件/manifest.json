@@ -1,0 +1,64 @@
+{
+  "manifest_version": 3,
+  "name": "亚马逊品牌和URL复制插件",
+  "version": "2.0",
+  "description": "从亚马逊商品页面复制品牌名称和URL，并显示商品颜色信息",
+  "permissions": [
+    "activeTab",
+    "clipboardWrite",
+    "tabs",
+    "scripting",
+    "downloads"
+  ],
+  "host_permissions": [
+    "*://*.amazon.com/*",
+    "*://*.amazon.co.uk/*",
+    "*://*.amazon.de/*",
+    "*://*.amazon.fr/*",
+    "*://*.amazon.es/*",
+    "*://*.amazon.it/*",
+    "*://*.amazon.co.jp/*",
+    "*://*.amazon.cn/*",
+    "*://*.amazon.ca/*",
+    "*://*.amazon.com.au/*",
+    "*://*.amazon.in/*",
+    "*://*.amazon.sg/*",
+    "*://*.amazon.ae/*",
+    "*://*.amazon.com.mx/*",
+    "*://*.amazon.com.br/*",
+    "*://*.amazon.nl/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.amazon.com/*",
+        "*://*.amazon.co.uk/*",
+        "*://*.amazon.de/*",
+        "*://*.amazon.fr/*",
+        "*://*.amazon.es/*",
+        "*://*.amazon.it/*",
+        "*://*.amazon.co.jp/*",
+        "*://*.amazon.cn/*",
+        "*://*.amazon.ca/*",
+        "*://*.amazon.com.au/*",
+        "*://*.amazon.in/*",
+        "*://*.amazon.sg/*",
+        "*://*.amazon.ae/*",
+        "*://*.amazon.com.mx/*",
+        "*://*.amazon.com.br/*",
+        "*://*.amazon.nl/*"
+      ],
+      "js": [
+        "content-scripts/main.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "复制亚马逊品牌和URL",
+    "default_popup": "popup.html"
+  }
+}
