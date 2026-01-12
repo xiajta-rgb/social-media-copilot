@@ -1,0 +1,18 @@
+{
+  "name": "amazon-plugin",
+  "version": "1.0.0",
+  "description": "亚马逊插件测试项目",
+  "main": "index.js",
+  "scripts": {
+  },
+  "keywords": [
+    "amazon",
+    "plugin",
+    "supabase"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.90.1"
+  }
+}

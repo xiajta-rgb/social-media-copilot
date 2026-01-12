@@ -26,7 +26,8 @@
     "*://*.amazon.ae/*",
     "*://*.amazon.com.mx/*",
     "*://*.amazon.com.br/*",
-    "*://*.amazon.nl/*"
+    "*://*.amazon.nl/*",
+    "https://www.kdocs.cn/api/v3/*"
   ],
   "content_scripts": [
     {

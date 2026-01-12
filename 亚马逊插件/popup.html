@@ -5,75 +5,209 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>亚马逊插件</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
         body {
-            width: 280px;
-            padding: 16px;
-            font-family: Arial, sans-serif;
-            background-color: #f5f5f5;
+            width: 300px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #ffffff;
+            margin: 0;
+            position: relative;
+            overflow: auto;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4285F4 0%, #3367D6 100%);
+            color: white;
+            padding: 10px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 15px;
+            font-weight: 600;
             margin: 0;
         }
-        .container {
-            text-align: center;
-        }
-        h1 {
-            font-size: 18px;
-            color: #333;
-            margin-bottom: 16px;
-        }
-        p {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 20px;
-        }
-        .button {
-            background-color: #f0c14b;
-            border: 1px solid #a88734;
-            color: #111;
-            padding: 8px 16px;
-            font-size: 14px;
+        
+        .close-btn {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
             cursor: pointer;
-            border-radius: 3px;
-            width: 100%;
-            text-align: center;
-        }
-        .button:hover {
-            background-color: #e0b13a;
-        }
-        .instructions {
-            margin-top: 20px;
-            text-align: left;
-            font-size: 12px;
-            color: #777;
-        }
-        .instructions h3 {
             font-size: 14px;
-            color: #555;
-            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+            transition: all 0.2s;
         }
-        .instructions ul {
-            padding-left: 20px;
-            margin: 0;
+        
+        .close-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
         }
-        .instructions li {
-            margin-bottom: 4px;
+        
+        .main-content {
+            padding: 10px 12px;
+        }
+        
+        .section {
+            margin-bottom: 12px;
+        }
+        
+        .section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        
+        .function-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .function-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+        
+        .function-item:hover {
+            background: #e8f0fe;
+            border-color: #4285F4;
+            transform: translateX(2px);
+        }
+        
+        .function-item .icon {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+        }
+        
+        .function-item .text {
+            flex: 1;
+            font-size: 12px;
+            color: #333;
+        }
+        
+        .function-item .arrow {
+            font-size: 10px;
+            color: #999;
+        }
+        
+        .footer {
+            padding: 10px 12px;
+            background: #f5f7fa;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .login-btn {
+            width: 100%;
+            background: #ff6b35;
+            color: white;
+            border: none;
+            padding: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .login-btn:hover {
+            background: #ff5722;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(255, 99, 71, 0.3);
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>亚马逊品牌和URL插件</h1>
-        <p>访问亚马逊商品页面时，插件会自动运行</p>
-        <button class="button" id="copyButton">复制当前页面信息</button>
-        <button class="button" id="showColorButton">显示颜色标签</button>
-        <div class="instructions">
-            <h3>功能说明：</h3>
-            <ul>
-                <li>点击按钮显示商品颜色名称</li>
-                <li>优化颜色选择器布局</li>
-                <li>一键复制品牌和URL</li>
-            </ul>
+    <div class="header">
+        <h1>拉森助手</h1>
+        <button class="close-btn" id="closeButton">×</button>
+    </div>
+    
+    <div class="main-content">
+        <div class="section">
+            <h2 class="section-title">亚马逊</h2>
+            <div class="function-list">
+                <div class="function-item" id="showColorButton">
+                    <div class="icon">🎨</div>
+                    <div class="text">颜色显示</div>
+                    <div class="arrow">›</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">常用功能</h2>
+            <div class="function-list">
+                <div class="function-item" id="accountButton">
+                    <div class="icon">🔑</div>
+                    <div class="text">账号管理</div>
+                    <div class="arrow">›</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">中台功能</h2>
+            <div class="function-list">
+                <div class="function-item disabled" style="cursor: not-allowed; opacity: 0.6;">
+                    <div class="icon">🔄</div>
+                    <div class="text">待开发</div>
+                    <div class="arrow">›</div>
+                </div>
+            </div>
         </div>
     </div>
+    
+    <div class="footer">
+        <button class="login-btn" id="toggleLoginForm">立即登录</button>
+    </div>
+    
+    <!-- 登录/注册表单 -->
+    <div id="login-form-container" style="display: none; padding: 10px 12px; background: #f5f7fa; border-top: 1px solid #e0e0e0;">
+        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #333;">登录/注册</h3>
+        <div style="margin-bottom: 10px;">
+            <label style="display: block; font-size: 12px; font-weight: 500; color: #555; margin-bottom: 4px;">用户名</label>
+            <input type="text" id="username" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px;" placeholder="请输入用户名">
+        </div>
+        <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 500; color: #555; margin-bottom: 4px;">密码</label>
+            <input type="password" id="password" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px;" placeholder="请输入密码">
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button id="registerBtn" style="flex: 1; padding: 8px; background: #e0e0e0; color: #555; border: none; border-radius: 3px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;">注册</button>
+            <button id="loginBtn" style="flex: 1; padding: 8px; background: #ff6b35; color: white; border: none; border-radius: 3px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;">登录</button>
+        </div>
+        <div id="login-message" style="margin-top: 10px; font-size: 11px; color: #666;"></div>
+    </div>
+    
     <script src="popup.js"></script>
 </body>
 </html>

@@ -1,9 +1,9 @@
+// @ts-nocheck
 // 消息传递服务模块
 
 // 消息类型枚举
 const MESSAGE_TYPES = {
   GET_PRODUCT_DATA: 'GET_PRODUCT_DATA',
-  COPY_BRAND_AND_URL: 'COPY_BRAND_AND_URL',
   SHOW_COLORS: 'SHOW_COLORS',
   DOWNLOAD_DATA: 'DOWNLOAD_DATA'
 };

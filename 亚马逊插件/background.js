@@ -5,42 +5,551 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.action.setBadgeText({ text: '' });
 });
 
-// 监听来自content scripts和popup的消息
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('收到消息:', request, '来自:', sender);
+// 配置Supabase信息
+const SUPABASE_CONFIG = {
+  url: "https://xarrfzqxwpuurjrsaant.supabase.co",
+  key: "sb_secret_HH69MF3MkF6z46Oof0b8Iw_F164QI-f"
+};
+
+// 1. 封装注册请求函数
+async function userRegister(username, password) {
+  try {
+    // 直接使用fetch调用Supabase API
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      },
+      body: JSON.stringify({
+        user: username,
+        password: password
+      })
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `注册失败：${response.status}`;
+      } catch {
+        errorMessage = `注册失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 尝试解析响应数据，如果失败则使用空数组
+    let data = [];
+    try {
+      data = await response.json();
+    } catch {
+      console.log("注册成功，但响应体为空");
+    }
+    
+    console.log("注册成功：", data);
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `注册成功！`,
+      data: data[0]
+    };
+  } catch (error) {
+    console.error("注册异常：", error);
+    return { code: 500, status: 'error', msg: `注册失败：${error.message}` };
+  }
+}
+
+// 2. 封装登录请求函数
+async function userLogin(username, password) {
+  try {
+    // 直接使用fetch调用Supabase API
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?user=eq.${encodeURIComponent(username)}&password=eq.${encodeURIComponent(password)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `登录失败：${response.status}`;
+      } catch {
+        errorMessage = `登录失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 尝试解析响应数据，如果失败则使用空数组
+    let data = [];
+    try {
+      data = await response.json();
+    } catch {
+      console.log("登录成功，但响应体为空");
+    }
+    
+    if (data && data.length > 0) {
+      console.log("登录成功：", data);
+      return { 
+        code: 200, 
+        status: 'success', 
+        msg: `登录成功！欢迎 ${username}`,
+        data: data[0]
+      };
+    } else {
+      return { 
+        code: 401, 
+        status: 'error', 
+        msg: `用户名或密码错误`
+      };
+    }
+  } catch (error) {
+    console.error("登录异常：", error);
+    return { code: 500, status: 'error', msg: `登录失败：${error.message}` };
+  }
+}
+
+// 3. 封装查询所有数据请求函数
+async function queryAllData() {
+  try {
+    // 直接使用fetch调用Supabase API
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `查询失败：${response.status}`;
+      } catch {
+        errorMessage = `查询失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 尝试解析响应数据，如果失败则使用空数组
+    let data = [];
+    try {
+      data = await response.json();
+    } catch {
+      console.log("查询成功，但响应体为空");
+    }
+    
+    console.log("查询数据成功：", data);
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `查询成功！共 ${data.length} 条数据`,
+      data: data
+    };
+  } catch (error) {
+    console.error("查询异常：", error);
+    return { code: 500, status: 'error', msg: `查询失败：${error.message}` };
+  }
+}
+
+// 4. 封装获取用户关联数据的请求函数
+async function getUserDatabaseData(username) {
+  try {
+    // 直接使用fetch调用Supabase API
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/userdatabase?user=eq.${encodeURIComponent(username)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `查询用户数据失败：${response.status}`;
+      } catch {
+        errorMessage = `查询用户数据失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 尝试解析响应数据，如果失败则使用空数组
+    let data = [];
+    try {
+      data = await response.json();
+    } catch {
+      console.log("查询用户数据成功，但响应体为空");
+    }
+    
+    console.log("查询用户数据成功：", data);
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `查询用户数据成功！共 ${data.length} 条数据`,
+      data: data
+    };
+  } catch (error) {
+    console.error("查询用户数据异常：", error);
+    return { code: 500, status: 'error', msg: `查询用户数据失败：${error.message}` };
+  }
+}
+
+// 5. 封装添加用户关联数据的请求函数
+async function addUserDatabaseData(username, personal_name, personal_acc, personal_pw) {
+  try {
+    // 首先获取用户的ID
+    const accountResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?user=eq.${encodeURIComponent(username)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!accountResponse.ok) {
+      throw new Error(`获取用户信息失败：${accountResponse.status}`);
+    }
+
+    const accountData = await accountResponse.json();
+    if (!accountData || accountData.length === 0) {
+      throw new Error(`用户不存在`);
+    }
+
+    const userId = accountData[0].id;
+
+    // 然后添加关联数据
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/userdatabase`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      },
+      body: JSON.stringify({
+        id: userId,
+        user: username,
+        personal_name: personal_name,
+        personal_acc: personal_acc,
+        personal_pw: personal_pw
+      })
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `添加用户数据失败：${response.status}`;
+      } catch {
+        errorMessage = `添加用户数据失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 尝试解析响应数据，如果失败则使用空对象
+    let data = {};
+    try {
+      data = await response.json();
+    } catch {
+      console.log("添加用户数据成功，但响应体为空");
+    }
+    
+    console.log("添加用户数据成功：", data);
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `添加用户数据成功！`,
+      data: data
+    };
+  } catch (error) {
+    console.error("添加用户数据异常：", error);
+    return { code: 500, status: 'error', msg: `添加用户数据失败：${error.message}` };
+  }
+}
+
+// 6. 封装删除用户关联数据的请求函数
+async function deleteUserDatabaseData(username, personal_name, personal_acc) {
+  try {
+    // 直接使用fetch调用Supabase API
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/userdatabase?user=eq.${encodeURIComponent(username)}&personal_name=eq.${encodeURIComponent(personal_name)}&personal_acc=eq.${encodeURIComponent(personal_acc)}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `删除用户数据失败：${response.status}`;
+      } catch {
+        errorMessage = `删除用户数据失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+    
+    console.log("删除用户数据成功");
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `删除用户数据成功！`
+    };
+  } catch (error) {
+    console.error("删除用户数据异常：", error);
+    return { code: 500, status: 'error', msg: `删除用户数据失败：${error.message}` };
+  }
+}
+
+// 确保只注册一个消息监听器，先移除所有现有监听器
+// 注意：这种方式只能移除通过该引用注册的监听器
+// 为了彻底清理，我们将使用更可靠的方式
+let existingListeners = [];
+
+// 重新注册一个新的消息监听器
+chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+  console.log('=== 消息处理开始 ===');
+  console.log('原始请求:', JSON.stringify(request));
+  console.log('发送者:', JSON.stringify(sender));
   
-  // 处理不同类型的消息
-  switch (request.type) {
-    case 'GET_PRODUCT_DATA':
-      // 处理获取商品数据的请求
-      handleProductDataRequest(request, sender, sendResponse);
-      break;
-    case 'COPY_BRAND_AND_URL':
-      // 处理复制品牌和URL的请求
-      handleCopyBrandAndUrlRequest(request, sender, sendResponse);
-      break;
-    case 'SHOW_COLORS':
-      // 处理显示颜色的请求
-      handleShowColorsRequest(request, sender, sendResponse);
-      break;
-    case 'DOWNLOAD_DATA':
-      // 处理下载数据的请求
-      handleDownloadRequest(request, sender, sendResponse);
-      break;
-    case 'API_REQUEST':
-      // 处理API请求
-      handleApiRequest(request, sender, sendResponse);
-      break;
-    case 'GET_ACTIVE_TAB':
-      // 获取当前活动标签页
-      handleGetActiveTab(request, sender, sendResponse);
-      break;
-    default:
-      console.log('未知消息类型:', request.type);
-      sendResponse({ status: 'error', message: '未知消息类型' });
+  try {
+    // 检查请求对象是否有效
+    if (!request || typeof request !== 'object') {
+      console.error('无效的请求对象:', request);
+      sendResponse({
+        code: 400,
+        status: 'error',
+        message: '无效的请求对象',
+        requestType: typeof request
+      });
+      return true;
+    }
+    
+    // 获取并验证消息类型
+    let msgType = request.type;
+    console.log('提取到的消息类型:', msgType);
+    
+    if (msgType === undefined || msgType === null) {
+      console.error('消息类型未定义');
+      sendResponse({
+        code: 400,
+        status: 'error',
+        message: '未知错误请审查'
+      });
+      return true;
+    }
+    
+    if (typeof msgType !== 'string') {
+      console.error('消息类型不是字符串:', msgType, typeof msgType);
+      sendResponse({
+        code: 400,
+        status: 'error',
+        message: '未知错误请审查',
+        receivedType: msgType,
+        type: typeof msgType
+      });
+      return true;
+    }
+    
+    // 处理不同类型的消息
+    switch (msgType) {
+      case 'GET_PRODUCT_DATA':
+        console.log('处理GET_PRODUCT_DATA消息');
+        handleProductDataRequest(request, sender, sendResponse);
+        return true;
+        
+      case 'COPY_BRAND_AND_URL':
+        console.log('处理COPY_BRAND_AND_URL消息');
+        handleCopyBrandAndUrlRequest(request, sender, sendResponse);
+        return true;
+        
+      case 'SHOW_COLORS':
+        console.log('处理SHOW_COLORS消息');
+        handleShowColorsRequest(request, sender, sendResponse);
+        return true;
+        
+      case 'DOWNLOAD_DATA':
+        console.log('处理DOWNLOAD_DATA消息');
+        handleDownloadRequest(request, sender, sendResponse);
+        return true;
+        
+      case 'API_REQUEST':
+        console.log('处理API_REQUEST消息');
+        (async () => {
+          try {
+            await handleApiRequest(request, sender, sendResponse);
+          } catch (error) {
+            console.error('API_REQUEST处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'API_REQUEST处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'GET_ACTIVE_TAB':
+        console.log('处理GET_ACTIVE_TAB消息');
+        handleGetActiveTab(request, sender, sendResponse);
+        return true;
+        
+      case 'register':
+        console.log('处理register消息');
+        (async () => {
+          try {
+            console.log('调用userRegister函数');
+            const result = await userRegister(request.username, request.password);
+            console.log('userRegister返回:', JSON.stringify(result));
+            sendResponse(result);
+          } catch (error) {
+            console.error('register处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'register处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'login':
+        console.log('处理login消息');
+        (async () => {
+          try {
+            console.log('调用userLogin函数');
+            const result = await userLogin(request.username, request.password);
+            console.log('userLogin返回:', JSON.stringify(result));
+            sendResponse(result);
+          } catch (error) {
+            console.error('login处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'login处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'queryAllData':
+        console.log('处理queryAllData消息');
+        (async () => {
+          try {
+            const result = await queryAllData();
+            sendResponse(result);
+          } catch (error) {
+            console.error('queryAllData处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'queryAllData处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'getUserDatabaseData':
+        console.log('处理getUserDatabaseData消息');
+        (async () => {
+          try {
+            const result = await getUserDatabaseData(request.username);
+            console.log('getUserDatabaseData返回:', JSON.stringify(result));
+            sendResponse(result);
+          } catch (error) {
+            console.error('getUserDatabaseData处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'getUserDatabaseData处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'addUserDatabaseData':
+        console.log('处理addUserDatabaseData消息');
+        (async () => {
+          try {
+            const result = await addUserDatabaseData(request.username, request.personal_name, request.personal_acc, request.personal_pw);
+            console.log('addUserDatabaseData返回:', JSON.stringify(result));
+            sendResponse(result);
+          } catch (error) {
+            console.error('addUserDatabaseData处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'addUserDatabaseData处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'deleteUserDatabaseData':
+        console.log('处理deleteUserDatabaseData消息');
+        (async () => {
+          try {
+            const result = await deleteUserDatabaseData(request.username, request.personal_name, request.personal_acc);
+            console.log('deleteUserDatabaseData返回:', JSON.stringify(result));
+            sendResponse(result);
+          } catch (error) {
+            console.error('deleteUserDatabaseData处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'deleteUserDatabaseData处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      default:
+        console.error('未知消息类型:', msgType);
+        sendResponse({
+          code: 400,
+          status: 'error',
+          message: '未知错误请审查',
+          receivedType: msgType
+        });
+        return true;
+    }
+  } catch (error) {
+    console.error('消息处理异常:', error);
+    sendResponse({
+      code: 500,
+      status: 'error',
+      message: '消息处理异常: ' + error.message,
+      error: error.message,
+      stack: error.stack
+    });
+    return true;
+  } finally {
+    console.log('=== 消息处理结束 ===');
   }
   
-  return true; // 保持消息通道打开，以便异步发送响应
+  return true;
 });
 
 // 处理获取商品数据的请求
