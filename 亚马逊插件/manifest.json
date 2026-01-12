@@ -8,7 +8,8 @@
     "clipboardWrite",
     "tabs",
     "scripting",
-    "downloads"
+    "downloads",
+    "storage"
   ],
   "host_permissions": [
     "*://*.amazon.com/*",
@@ -27,7 +28,8 @@
     "*://*.amazon.com.mx/*",
     "*://*.amazon.com.br/*",
     "*://*.amazon.nl/*",
-    "https://www.kdocs.cn/api/v3/*"
+    "https://www.kdocs.cn/api/v3/*",
+    "https://xarrfzqxwpuurjrsaant.supabase.co/*"
   ],
   "content_scripts": [
     {

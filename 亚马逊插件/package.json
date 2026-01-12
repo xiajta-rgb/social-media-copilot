@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "description": "亚马逊插件测试项目",
   "main": "index.js",
-  "scripts": {
-  },
+  "scripts": {},
   "keywords": [
     "amazon",
     "plugin",

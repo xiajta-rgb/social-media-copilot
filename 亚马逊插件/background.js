@@ -8,7 +8,8 @@ chrome.runtime.onInstalled.addListener(() => {
 // 配置Supabase信息
 const SUPABASE_CONFIG = {
   url: "https://xarrfzqxwpuurjrsaant.supabase.co",
-  key: "sb_secret_HH69MF3MkF6z46Oof0b8Iw_F164QI-f"
+  // 使用可发布密钥（public key）
+  key: "sb_publishable_Q_tcn_K4HCXIriaMCm8_VQ_qtQYvit6"
 };
 
 // 1. 封装注册请求函数
@@ -23,7 +24,7 @@ async function userRegister(username, password) {
         "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
       },
       body: JSON.stringify({
-        user: username,
+        username: username,
         password: password
       })
     });
@@ -65,8 +66,13 @@ async function userRegister(username, password) {
 // 2. 封装登录请求函数
 async function userLogin(username, password) {
   try {
+    console.log('登录请求开始:', { username, password });
+    
     // 直接使用fetch调用Supabase API
-    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?user=eq.${encodeURIComponent(username)}&password=eq.${encodeURIComponent(password)}`, {
+    const url = `${SUPABASE_CONFIG.url}/rest/v1/account?username=eq.${encodeURIComponent(username)}&password=eq.${encodeURIComponent(password)}`;
+    console.log('登录请求URL:', url);
+    
+    const response = await fetch(url, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -75,13 +81,17 @@ async function userLogin(username, password) {
       }
     });
 
+    console.log('登录请求响应状态:', response.status, response.statusText);
+    
     if (!response.ok) {
       // 尝试获取错误信息，如果失败则使用默认信息
       let errorMessage;
       try {
         const errorData = await response.json();
+        console.log('登录请求错误数据:', errorData);
         errorMessage = errorData.message || `登录失败：${response.status}`;
-      } catch {
+      } catch (e) {
+        console.log('解析错误信息失败:', e);
         errorMessage = `登录失败：${response.status} ${response.statusText}`;
       }
       throw new Error(errorMessage);
@@ -91,8 +101,9 @@ async function userLogin(username, password) {
     let data = [];
     try {
       data = await response.json();
-    } catch {
-      console.log("登录成功，但响应体为空");
+      console.log('登录请求响应数据:', data);
+    } catch (e) {
+      console.log("登录成功，但响应体为空:", e);
     }
     
     if (data && data.length > 0) {
@@ -104,6 +115,7 @@ async function userLogin(username, password) {
         data: data[0]
       };
     } else {
+      console.log("登录失败：账号密码错误，响应数据为空");
       return { 
         code: 401, 
         status: 'error', 
@@ -167,7 +179,7 @@ async function queryAllData() {
 async function getUserDatabaseData(username) {
   try {
     // 直接使用fetch调用Supabase API
-    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/userdatabase?user=eq.${encodeURIComponent(username)}`, {
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/userdatabase?username=eq.${encodeURIComponent(username)}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -214,7 +226,7 @@ async function getUserDatabaseData(username) {
 async function addUserDatabaseData(username, personal_name, personal_acc, personal_pw) {
   try {
     // 首先获取用户的ID
-    const accountResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?user=eq.${encodeURIComponent(username)}`, {
+    const accountResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?username=eq.${encodeURIComponent(username)}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -234,7 +246,7 @@ async function addUserDatabaseData(username, personal_name, personal_acc, person
 
     const userId = accountData[0].id;
 
-    // 然后添加关联数据
+    // 然后添加关联数据（移除id字段，让Supabase自动生成唯一的ID）
     const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/userdatabase`, {
       method: "POST",
       headers: {
@@ -243,8 +255,8 @@ async function addUserDatabaseData(username, personal_name, personal_acc, person
         "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
       },
       body: JSON.stringify({
-        id: userId,
-        user: username,
+        username: username,
+        account_id: userId, // 设置为用户的account.id，满足外键约束
         personal_name: personal_name,
         personal_acc: personal_acc,
         personal_pw: personal_pw
@@ -289,7 +301,7 @@ async function addUserDatabaseData(username, personal_name, personal_acc, person
 async function deleteUserDatabaseData(username, personal_name, personal_acc) {
   try {
     // 直接使用fetch调用Supabase API
-    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/userdatabase?user=eq.${encodeURIComponent(username)}&personal_name=eq.${encodeURIComponent(personal_name)}&personal_acc=eq.${encodeURIComponent(personal_acc)}`, {
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/userdatabase?username=eq.${encodeURIComponent(username)}&personal_name=eq.${encodeURIComponent(personal_name)}&personal_acc=eq.${encodeURIComponent(personal_acc)}`, {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
@@ -475,7 +487,27 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         console.log('处理getUserDatabaseData消息');
         (async () => {
           try {
-            const result = await getUserDatabaseData(request.username);
+            let username = request.username;
+            // 如果没有提供username，从chrome.storage.local获取登录状态
+            if (!username && request.getLoggedInUser) {
+              const storageResult = await new Promise((resolve) => {
+                chrome.storage.local.get('loggedInUser', resolve);
+              });
+              if (storageResult.loggedInUser) {
+                username = storageResult.loggedInUser.username;
+              }
+            }
+            
+            if (!username) {
+              sendResponse({
+                code: 401,
+                status: 'error',
+                message: '未找到登录用户'
+              });
+              return;
+            }
+            
+            const result = await getUserDatabaseData(username);
             console.log('getUserDatabaseData返回:', JSON.stringify(result));
             sendResponse(result);
           } catch (error) {
@@ -493,7 +525,27 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         console.log('处理addUserDatabaseData消息');
         (async () => {
           try {
-            const result = await addUserDatabaseData(request.username, request.personal_name, request.personal_acc, request.personal_pw);
+            let username = request.username;
+            // 如果没有提供username，从chrome.storage.local获取登录状态
+            if (!username) {
+              const storageResult = await new Promise((resolve) => {
+                chrome.storage.local.get('loggedInUser', resolve);
+              });
+              if (storageResult.loggedInUser) {
+                username = storageResult.loggedInUser.username;
+              }
+            }
+            
+            if (!username) {
+              sendResponse({
+                code: 401,
+                status: 'error',
+                message: '未找到登录用户'
+              });
+              return;
+            }
+            
+            const result = await addUserDatabaseData(username, request.personal_name, request.personal_acc, request.personal_pw);
             console.log('addUserDatabaseData返回:', JSON.stringify(result));
             sendResponse(result);
           } catch (error) {
@@ -511,7 +563,27 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         console.log('处理deleteUserDatabaseData消息');
         (async () => {
           try {
-            const result = await deleteUserDatabaseData(request.username, request.personal_name, request.personal_acc);
+            let username = request.username;
+            // 如果没有提供username，从chrome.storage.local获取登录状态
+            if (!username) {
+              const storageResult = await new Promise((resolve) => {
+                chrome.storage.local.get('loggedInUser', resolve);
+              });
+              if (storageResult.loggedInUser) {
+                username = storageResult.loggedInUser.username;
+              }
+            }
+            
+            if (!username) {
+              sendResponse({
+                code: 401,
+                status: 'error',
+                message: '未找到登录用户'
+              });
+              return;
+            }
+            
+            const result = await deleteUserDatabaseData(username, request.personal_name, request.personal_acc);
             console.log('deleteUserDatabaseData返回:', JSON.stringify(result));
             sendResponse(result);
           } catch (error) {

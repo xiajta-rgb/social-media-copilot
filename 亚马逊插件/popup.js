@@ -126,33 +126,54 @@ function sendMessageToContentScript(tabId, message, successCallback, errorCallba
 
 // 账号管理按钮点击事件处理
 function handleAccountButtonClick() {
+    console.log('=== 账号管理按钮点击事件触发 ===');
     // 检查是否已登录
-    const loggedInUser = localStorage.getItem('loggedInUser');
-    if (!loggedInUser) {
-        // 未登录，显示提示
-        const messageDiv = document.getElementById('login-message');
-        if (messageDiv) {
-            messageDiv.textContent = '请先登录后使用账号管理功能';
-            messageDiv.style.color = '#e53935';
+    chrome.storage.local.get('loggedInUser', (result) => {
+        console.log('获取登录状态结果:', result);
+        const loggedInUser = result.loggedInUser;
+        console.log('当前登录用户:', loggedInUser);
+        
+        if (!loggedInUser) {
+            console.log('用户未登录，显示登录提示');
+            // 未登录，显示提示
+            const messageDiv = document.getElementById('login-message');
+            console.log('登录消息元素:', messageDiv);
+            if (messageDiv) {
+                messageDiv.textContent = '请先登录后使用账号管理功能';
+                messageDiv.style.color = '#e53935';
+            }
+            // 显示登录表单
+            const loginFormContainer = document.getElementById('login-form-container');
+            console.log('登录表单容器:', loginFormContainer);
+            if (loginFormContainer) {
+                loginFormContainer.style.display = 'block';
+            }
+            return;
         }
-        // 显示登录表单
-        const loginFormContainer = document.getElementById('login-form-container');
-        if (loginFormContainer) {
-            loginFormContainer.style.display = 'block';
-        }
-        return;
-    }
-    
-    // 已登录，获取当前活动标签页
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const activeTab = tabs[0];
-        if (activeTab && activeTab.id) {
-            // 注入账号管理弹窗到当前网页
-            chrome.scripting.executeScript({
-                target: { tabId: activeTab.id },
-                func: injectAccountManager
-            });
-        }
+        
+        console.log('用户已登录，获取当前活动标签页');
+        // 已登录，获取当前活动标签页（不限制页面类型）
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            console.log('获取标签页结果:', tabs);
+            const activeTab = tabs[0];
+            console.log('当前活动标签页:', activeTab);
+            if (activeTab && activeTab.id) {
+                console.log('注入账号管理弹窗到标签页:', activeTab.id);
+                // 注入账号管理弹窗到当前网页（不限制页面类型）
+                chrome.scripting.executeScript({
+                    target: { tabId: activeTab.id },
+                    func: injectAccountManager
+                }, (results) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('注入content script失败:', chrome.runtime.lastError);
+                    } else {
+                        console.log('注入content script成功:', results);
+                    }
+                });
+            } else {
+                console.error('未找到活动标签页');
+            }
+        });
     });
 }
 
@@ -187,108 +208,275 @@ function handleShowColorButtonClick() {
 
 // 显示消息
 function showMessage(text, type) {
-    // 创建消息元素
-    const messageElement = document.createElement('div');
-    messageElement.textContent = text;
-    messageElement.style.cssText = `
-        position: fixed;
-        top: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        padding: 8px 16px;
-        border-radius: 4px;
-        color: white;
-        font-size: 14px;
-        z-index: 10000;
-        animation: fadeInOut 2s ease;
-    `;
-    
-    // 根据类型设置颜色
-    if (type === 'success') {
-        messageElement.style.backgroundColor = '#4CAF50';
-    } else {
-        messageElement.style.backgroundColor = '#f44336';
-    }
-    
-    // 添加到页面
-    document.body.appendChild(messageElement);
-    
-    // 2秒后移除
-    setTimeout(() => {
-        messageElement.remove();
-    }, 2000);
+  // 创建消息元素
+  const messageElement = document.createElement('div');
+  messageElement.textContent = text;
+  messageElement.style.cssText = `
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    border-radius: 4px;
+    color: white;
+    font-size: 14px;
+    z-index: 10000;
+    animation: fadeInOut 2s ease;
+  `;
+  
+  // 根据类型设置颜色
+  if (type === 'success') {
+    messageElement.style.backgroundColor = '#4CAF50';
+  } else {
+    messageElement.style.backgroundColor = '#f44336';
+  }
+  
+  // 添加到页面
+  document.body.appendChild(messageElement);
+  
+  // 2秒后移除
+  setTimeout(() => {
+    messageElement.remove();
+  }, 2000);
 }
 
-// 页面加载完成后绑定事件
-document.addEventListener('DOMContentLoaded', () => {
-    const showColorButton = document.getElementById('showColorButton');
-    const accountButton = document.getElementById('accountButton');
-    const closeButton = document.getElementById('closeButton');
+// 更新登录状态UI
+function updateLoginUI() {
+  chrome.storage.local.get('loggedInUser', (result) => {
+    const loggedInUser = result.loggedInUser;
+    const loginFormContainer = document.getElementById('login-form-container');
     const toggleLoginForm = document.getElementById('toggleLoginForm');
+    const accountButton = document.getElementById('accountButton');
+    const loginMessage = document.getElementById('login-message');
     
-    // 颜色显示按钮点击事件
-    if (showColorButton) {
-        showColorButton.addEventListener('click', handleShowColorButtonClick);
+    if (loggedInUser) {
+      // 用户已登录
+      const userInfo = loggedInUser;
+      
+      // 完全隐藏登录表单
+      if (loginFormContainer) {
+        loginFormContainer.style.display = 'none';
+      }
+      
+      // 更新登录按钮为用户信息
+      if (toggleLoginForm) {
+        toggleLoginForm.innerHTML = `👤 ${userInfo.username}`;
+        toggleLoginForm.title = '点击查看用户信息';
+        
+        // 点击显示用户信息和登出按钮
+        toggleLoginForm.onclick = function() {
+          const userMenu = document.getElementById('user-menu');
+          if (userMenu) {
+            userMenu.style.display = userMenu.style.display === 'none' ? 'block' : 'none';
+          } else {
+            // 创建用户菜单（只包含用户信息和登出）
+            createUserMenu(userInfo);
+          }
+        };
+      }
+      
+      // 启用账号管理按钮
+      if (accountButton) {
+        accountButton.disabled = false;
+        accountButton.style.opacity = '1';
+      }
+      
+      // 更新登录消息
+      if (loginMessage) {
+        loginMessage.textContent = `已登录：${userInfo.username}`;
+        loginMessage.style.color = '#43a047';
+      }
+    } else {
+      // 用户未登录
+      // 设置为立即登录按钮
+      if (toggleLoginForm) {
+        toggleLoginForm.innerHTML = '请登录';
+        toggleLoginForm.title = '点击登录或注册';
+        
+        // 点击直接显示登录表单
+        toggleLoginForm.onclick = function() {
+          const loginFormContainer = document.getElementById('login-form-container');
+          if (loginFormContainer) {
+            loginFormContainer.style.display = 'block';
+          }
+        };
+      }
+      
+      // 禁用账号管理按钮
+      if (accountButton) {
+        accountButton.disabled = true;
+        accountButton.style.opacity = '0.6';
+      }
+      
+      // 显示请登录的提示
+      if (loginMessage) {
+        loginMessage.textContent = '请先登录后使用账号管理功能';
+        loginMessage.style.color = '#e53935';
+      }
     }
-    
-    // 账号管理按钮点击事件
-    if (accountButton) {
-        accountButton.addEventListener('click', handleAccountButtonClick);
+  });
+}
+
+// 创建用户菜单
+function createUserMenu(userInfo) {
+  const menu = document.createElement('div');
+  menu.id = 'user-menu';
+  menu.style.cssText = `
+    position: fixed;
+    bottom: 60px;
+    right: 10px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 10000;
+    min-width: 180px;
+    padding: 8px 0;
+  `;
+  
+  menu.innerHTML = `
+    <div style="padding: 12px 16px; border-bottom: 1px solid #eee;">
+      <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">${userInfo.username}</div>
+      <div style="font-size: 12px; color: #666;">用户ID: ${userInfo.id || 'N/A'}</div>
+    </div>
+    <button id="logout-btn" style="
+      width: 100%;
+      padding: 10px 16px;
+      border: none;
+      background: none;
+      text-align: left;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background-color 0.2s;
+    ">
+      🚪 登出
+    </button>
+  `;
+  
+  // 添加悬停效果
+  const logoutBtn = menu.querySelector('#logout-btn');
+  if (logoutBtn) {
+    logoutBtn.onmouseover = function() {
+      this.style.backgroundColor = '#f5f7fa';
+    };
+    logoutBtn.onmouseout = function() {
+      this.style.backgroundColor = 'transparent';
+    };
+  }
+  
+  // 添加到页面
+  document.body.appendChild(menu);
+  
+  // 添加登出事件
+    if (logoutBtn) {
+        logoutBtn.onclick = function() {
+            // 清除chrome.storage.local中的用户信息
+            chrome.storage.local.remove('loggedInUser', () => {
+                // 更新UI
+                updateLoginUI();
+                
+                // 隐藏菜单
+                menu.remove();
+                
+                // 显示登出消息
+                showMessage('已成功登出', 'success');
+            });
+        };
     }
-    
-    // 关闭按钮点击事件
-    if (closeButton) {
-        closeButton.addEventListener('click', () => {
-            window.close();
-        });
+  
+  // 点击其他地方关闭菜单
+  document.addEventListener('click', function(e) {
+    if (!menu.contains(e.target) && e.target !== document.getElementById('toggleLoginForm')) {
+      menu.remove();
     }
-    
-    // 显示/隐藏登录表单
-    if (toggleLoginForm) {
-        toggleLoginForm.addEventListener('click', () => {
-            const loginFormContainer = document.getElementById('login-form-container');
-            if (loginFormContainer) {
-                loginFormContainer.style.display = loginFormContainer.style.display === 'none' ? 'block' : 'none';
-            }
-        });
-    }
-    
-    // 登录按钮点击事件
-    const loginBtn = document.getElementById('loginBtn');
-    if (loginBtn) {
-        loginBtn.addEventListener('click', () => {
-            handleLoginRegister('login');
-        });
-    }
-    
-    // 注册按钮点击事件
-    const registerBtn = document.getElementById('registerBtn');
-    if (registerBtn) {
-        registerBtn.addEventListener('click', () => {
-            handleLoginRegister('register');
-        });
-    }
-    
-    // 添加键盘事件支持
-    const usernameInput = document.getElementById('username');
-    const passwordInput = document.getElementById('password');
-    
-    if (usernameInput) {
-        usernameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && passwordInput) {
-                passwordInput.focus();
-            }
-        });
-    }
-    
-    if (passwordInput) {
-        passwordInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                handleLoginRegister('login');
-            }
-        });
-    }
+  });
+}
+
+// 直接绑定事件，不需要等待window.load，因为脚本在<body>末尾加载时DOM已经就绪
+console.log('=== 开始绑定事件 ===');
+const showColorButton = document.getElementById('showColorButton');
+const accountButton = document.getElementById('accountButton');
+const closeButton = document.getElementById('closeButton');
+const toggleLoginForm = document.getElementById('toggleLoginForm');
+
+console.log('DOM元素获取结果:', {
+    showColorButton: showColorButton,
+    accountButton: accountButton,
+    closeButton: closeButton,
+    toggleLoginForm: toggleLoginForm
 });
+
+// 颜色显示按钮点击事件
+if (showColorButton) {
+    showColorButton.addEventListener('click', handleShowColorButtonClick);
+    console.log('颜色显示按钮点击事件已绑定');
+}
+
+// 账号管理按钮点击事件
+if (accountButton) {
+    accountButton.addEventListener('click', handleAccountButtonClick);
+    console.log('账号管理按钮点击事件已绑定');
+}
+
+// 关闭按钮点击事件
+if (closeButton) {
+    closeButton.addEventListener('click', () => {
+        window.close();
+    });
+    console.log('关闭按钮点击事件已绑定');
+}
+
+// 登录/注册表单的显示/隐藏逻辑已在updateLoginUI函数中处理
+// 不再需要这里的事件监听器
+
+// 登录按钮点击事件
+const loginBtn = document.getElementById('loginBtn');
+if (loginBtn) {
+    loginBtn.addEventListener('click', () => {
+        handleLoginRegister('login');
+    });
+    console.log('登录按钮点击事件已绑定');
+}
+
+// 注册按钮点击事件
+const registerBtn = document.getElementById('registerBtn');
+if (registerBtn) {
+    registerBtn.addEventListener('click', () => {
+        handleLoginRegister('register');
+    });
+    console.log('注册按钮点击事件已绑定');
+}
+
+// 添加键盘事件支持
+const usernameInput = document.getElementById('username');
+const passwordInput = document.getElementById('password');
+
+console.log('输入框获取结果:', {
+    usernameInput: usernameInput,
+    passwordInput: passwordInput
+});
+
+if (usernameInput) {
+    usernameInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && passwordInput) {
+            passwordInput.focus();
+        }
+    });
+    console.log('用户名输入框键盘事件已绑定');
+}
+
+if (passwordInput) {
+    passwordInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            handleLoginRegister('login');
+        }
+    });
+    console.log('密码输入框键盘事件已绑定');
+}
+
+// 初始化登录状态UI
+console.log('初始化登录状态UI');
+updateLoginUI();
 
 // 登录/注册处理函数
 async function handleLoginRegister(action) {
@@ -351,6 +539,20 @@ async function handleLoginRegister(action) {
             if (result.code === 200 || result.status === 'success') {
                 messageDiv.textContent = `${action === 'login' ? '登录' : '注册'}成功！`;
                 messageDiv.style.color = '#43a047';
+                
+                // 登录成功后，存储用户信息到chrome.storage.local
+                if (action === 'login' && result.data) {
+                    const userInfo = {
+                        username: result.data.username || username,
+                        id: result.data.id
+                    };
+                    chrome.storage.local.set({ loggedInUser: userInfo }, () => {
+                        console.log('用户信息已存储:', userInfo);
+                        
+                        // 更新UI显示登录状态
+                        updateLoginUI();
+                    });
+                }
             } else {
                 messageDiv.textContent = `${action === 'login' ? '登录' : '注册'}失败：${result.msg || result.message || '未知错误'}`;
                 messageDiv.style.color = '#e53935';
@@ -377,38 +579,41 @@ async function handleLoginRegister(action) {
 
 // 注入到当前网页的账号管理弹窗函数
 async function injectAccountManager() {
+    console.log('=== 开始注入账号管理弹窗 ===');
     // 检查是否已存在账号管理弹窗
     if (document.getElementById('account-manager-modal')) {
+        console.log('账号管理弹窗已存在，返回');
         return;
     }
     
     // 从background获取当前登录用户的关联数据
     let passwordItems = [];
     try {
-        // 获取当前登录用户
-        const loggedInUser = JSON.parse(localStorage.getItem('loggedInUser'));
-        if (loggedInUser) {
-            // 使用消息传递从background获取用户关联数据
-            const result = await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage(
-                    { type: 'getUserDatabaseData', username: loggedInUser.username },
-                    (response) => {
-                        if (chrome.runtime.lastError) {
-                            reject(new Error(chrome.runtime.lastError.message));
-                        } else {
-                            resolve(response);
-                        }
+        console.log('从background获取用户数据');
+        // 使用消息传递从background获取登录状态和用户关联数据
+        const result = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+                { type: 'getUserDatabaseData', getLoggedInUser: true },
+                (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('发送消息失败:', chrome.runtime.lastError);
+                        reject(new Error(chrome.runtime.lastError.message));
+                    } else {
+                        console.log('获取用户数据成功:', response);
+                        resolve(response);
                     }
-                );
-            });
-            
-            if (result.status === 'success') {
-                passwordItems = result.data.map(item => ({
-                    site: item.personal_name,
-                    username: item.personal_acc,
-                    password: item.personal_pw
-                }));
-            }
+                }
+            );
+        });
+        
+        if (result.status === 'success' && result.data) {
+            console.log('处理用户数据:', result.data);
+            passwordItems = result.data.map(item => ({
+                site: item.personal_name,
+                username: item.personal_acc,
+                password: item.personal_pw
+            }));
+            console.log('处理后的数据:', passwordItems);
         }
     } catch (error) {
         console.error('获取账号数据时出错:', error);
@@ -598,18 +803,18 @@ async function injectAccountManager() {
     // 创建弹窗元素
     const modal = document.createElement('div');
     modal.id = 'account-manager-modal';
+    modal.style.cssText = `
+        width: 800px;
+        min-width: 600px;
+        height: 600px;
+        min-height: 400px;
+    `;
     modal.innerHTML = `
         <div class="account-header" id="account-drag-handle">
             <h3 class="account-title">账号密码管理器</h3>
             <button class="account-close" id="account-close">×</button>
         </div>
         <div class="account-content">
-            <div class="account-table-header">
-                <div>名称</div>
-                <div>账号</div>
-                <div>密码</div>
-                <div>操作</div>
-            </div>
             <div class="account-list" id="account-list"></div>
         </div>
         <div class="account-resize-handle"></div>
@@ -619,22 +824,117 @@ async function injectAccountManager() {
     document.head.appendChild(style);
     document.body.appendChild(modal);
     
+    // 渲染账号列表
+    const accountList = modal.querySelector('#account-list');
+    
     // 添加添加数据的表单
     const addForm = document.createElement('div');
     addForm.className = 'account-add-form';
+    addForm.style.cssText = `
+        background: #f8f9fa;
+        padding: 16px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        border: 1px solid #e9ecef;
+    `;
     addForm.innerHTML = `
-        <h4 style="margin: 0 0 10px 0; font-size: 14px; font-weight: 600;">添加新数据</h4>
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 15px;">
-            <input type="text" id="new-site" placeholder="名称" style="padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px;">
-            <input type="text" id="new-username" placeholder="账号" style="padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px;">
-            <input type="text" id="new-password" placeholder="密码" style="padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px;">
-            <button id="add-btn" style="padding: 6px 12px; background: #4CAF50; color: white; border: none; border-radius: 3px; font-size: 12px; cursor: pointer;">添加</button>
+        <h4 style="margin: 0 0 14px 0; font-size: 14px; font-weight: 600; color: #343a40;">添加新账号</h4>
+        <div style="display: grid; grid-template-columns: 2fr 2fr 2fr 1fr; gap: 10px; align-items: end;">
+            <div style="display: flex; flex-direction: column;">
+                <label for="new-site" style="font-size: 12px; font-weight: 500; color: #6c757d; margin-bottom: 4px;">名称</label>
+                <input type="text" id="new-site" placeholder="请输入网站/应用名称" style="padding: 8px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px; transition: border-color 0.2s;">
+            </div>
+            <div style="display: flex; flex-direction: column;">
+                <label for="new-username" style="font-size: 12px; font-weight: 500; color: #6c757d; margin-bottom: 4px;">账号</label>
+                <input type="text" id="new-username" placeholder="请输入账号" style="padding: 8px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px; transition: border-color 0.2s;">
+            </div>
+            <div style="display: flex; flex-direction: column;">
+                <label for="new-password" style="font-size: 12px; font-weight: 500; color: #6c757d; margin-bottom: 4px;">密码</label>
+                <input type="text" id="new-password" placeholder="请输入密码" style="padding: 8px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px; transition: border-color 0.2s;">
+            </div>
+            <button id="add-btn" title="添加" style="padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color 0.2s;">+</button>
         </div>
     `;
-    modal.querySelector('.account-content').insertBefore(addForm, accountList);
     
-    // 渲染账号列表
-    const accountList = modal.querySelector('#account-list');
+    // 创建表头
+    const tableHeader = document.createElement('div');
+    tableHeader.className = 'account-table-header';
+    tableHeader.style.display = 'grid';
+    tableHeader.style.gridTemplateColumns = '40px 2fr 1fr 1fr 160px';
+    tableHeader.style.alignItems = 'center';
+    tableHeader.innerHTML = `
+        <div style="text-align: center;">序号</div>
+        <div>名称</div>
+        <div>账号</div>
+        <div>密码</div>
+        <div style="text-align: left;">操作</div>
+    `;
+    
+    // 调整顺序：添加表单 -> 表头 -> 账号列表
+    const accountContent = modal.querySelector('.account-content');
+    accountContent.insertBefore(addForm, accountList);
+    accountContent.insertBefore(tableHeader, accountList);
+    
+    // 添加数据事件
+    const addBtn = modal.querySelector('#add-btn');
+    if (addBtn) {
+        addBtn.addEventListener('click', async () => {
+            const site = modal.querySelector('#new-site').value.trim();
+            const username = modal.querySelector('#new-username').value.trim();
+            const password = modal.querySelector('#new-password').value.trim();
+            
+            if (!site || !username || !password) {
+                showNotification('请填写完整信息', 'error');
+                return;
+            }
+            
+            try {
+                
+                // 使用消息传递从background添加数据
+                const result = await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage(
+                        {
+                            type: 'addUserDatabaseData',
+                            personal_name: site,
+                            personal_acc: username,
+                            personal_pw: password
+                        },
+                        (response) => {
+                            if (chrome.runtime.lastError) {
+                                reject(new Error(chrome.runtime.lastError.message));
+                            } else {
+                                resolve(response);
+                            }
+                        }
+                    );
+                });
+                
+                if (result.status === 'success') {
+                    // 添加到本地数组
+                    passwordItems.push({
+                        site: site,
+                        username: username,
+                        password: password
+                    });
+                    
+                    // 清空表单
+                    modal.querySelector('#new-site').value = '';
+                    modal.querySelector('#new-username').value = '';
+                    modal.querySelector('#new-password').value = '';
+                    
+                    // 重新渲染列表
+                    renderAccountList();
+                    
+                    showNotification('添加成功', 'success');
+                } else {
+                    throw new Error(result.msg || result.message || '添加失败');
+                }
+            } catch (error) {
+                console.error('添加失败:', error);
+                showNotification('添加失败: ' + error.message, 'error');
+            }
+        });
+    }
     
     // 渲染数据列表
     function renderAccountList() {
@@ -659,14 +959,29 @@ async function injectAccountManager() {
                 if (!item || typeof item !== 'object') return;
                 const row = document.createElement('div');
                 row.className = 'account-item';
+                row.draggable = false; // 取消拖动功能
+                row.dataset.index = idx;
+                row.style.display = 'grid';
+                row.style.gridTemplateColumns = '40px 2fr 1fr 1fr 160px';
+                row.style.alignItems = 'center';
                 row.innerHTML = `
+                    <div style="text-align: center;">${idx + 1}</div>
                     <div>${item.site || '未知名称'}</div>
                     <div>${item.username || '未知账号'}</div>
                     <div>${item.password || '未知密码'}</div>
-                    <div class="account-actions">
-                        <button class="account-btn copy-account" data-idx="${idx}" data-type="username">复制账号</button>
-                        <button class="account-btn copy-password" data-idx="${idx}" data-type="password">复制密码</button>
-                        <button class="account-btn delete-item" data-idx="${idx}" style="background: #ffebee; color: #c62828; margin-left: 5px;">删除</button>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button class="account-btn copy-account" title="复制账号" data-idx="${idx}" data-type="username" style="width: 32px; height: 32px; border: 1px solid #ddd; border-radius: 4px; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        </button>
+                        <button class="account-btn copy-password" title="复制密码" data-idx="${idx}" data-type="password" style="width: 32px; height: 32px; border: 1px solid #ddd; border-radius: 4px; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        </button>
+                        <button class="account-btn edit-item" title="修改" data-idx="${idx}" style="width: 32px; height: 32px; border: 1px solid #ddd; border-radius: 4px; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        </button>
+                        <button class="account-btn delete-item" title="删除" data-idx="${idx}" style="width: 32px; height: 32px; border: 1px solid #ddd; border-radius: 4px; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                        </button>
                     </div>
                 `;
                 accountList.appendChild(row);
@@ -675,6 +990,7 @@ async function injectAccountManager() {
         
         // 重新绑定事件
         bindCopyEvents();
+        bindEditEvents();
         bindDeleteEvents();
     }
     
@@ -702,6 +1018,149 @@ async function injectAccountManager() {
         });
     }
     
+    // 绑定修改事件
+    function bindEditEvents() {
+        const editBtns = modal.querySelectorAll('.edit-item');
+        editBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(btn.dataset.idx, 10);
+                const item = passwordItems[idx];
+                if (!item) return;
+                
+                // 创建修改表单
+                createEditForm(item, idx);
+            });
+        });
+    }
+    
+    // 创建修改表单
+    function createEditForm(item, idx) {
+        // 检查是否已存在修改表单
+        const existingForm = document.getElementById('edit-form');
+        if (existingForm) {
+            existingForm.remove();
+        }
+        
+        // 创建修改表单
+        const editForm = document.createElement('div');
+        editForm.id = 'edit-form';
+        editForm.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            z-index: 1000001;
+            min-width: 400px;
+        `;
+        
+        editForm.innerHTML = `
+            <h3 style="margin-top: 0; margin-bottom: 20px;">修改账号信息</h3>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div>
+                    <label style="display: block; margin-bottom: 4px; font-weight: 500;">名称</label>
+                    <input type="text" id="edit-site" value="${item.site || ''}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 4px; font-weight: 500;">账号</label>
+                    <input type="text" id="edit-username" value="${item.username || ''}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 4px; font-weight: 500;">密码</label>
+                    <input type="text" id="edit-password" value="${item.password || ''}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                    <button id="cancel-edit" title="取消" style="padding: 8px 16px; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5; cursor: pointer;">✕</button>
+                    <button id="save-edit" title="保存" style="padding: 8px 16px; border: none; border-radius: 4px; background: #4CAF50; color: white; cursor: pointer;">✓</button>
+                </div>
+            </div>
+        `;
+        
+        // 添加到页面
+        document.body.appendChild(editForm);
+        
+        // 添加事件监听
+        document.getElementById('cancel-edit').addEventListener('click', () => {
+            editForm.remove();
+        });
+        
+        document.getElementById('save-edit').addEventListener('click', async () => {
+            const site = editForm.querySelector('#edit-site').value.trim();
+            const username = editForm.querySelector('#edit-username').value.trim();
+            const password = editForm.querySelector('#edit-password').value.trim();
+            
+            if (!site || !username || !password) {
+                showNotification('请填写完整信息', 'error');
+                return;
+            }
+            
+            try {
+                // 使用消息传递从background更新数据
+                // 先删除旧数据
+                await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage(
+                        {
+                            type: 'deleteUserDatabaseData',
+                            personal_name: item.site,
+                            personal_acc: item.username
+                        },
+                        (response) => {
+                            if (chrome.runtime.lastError) {
+                                reject(new Error(chrome.runtime.lastError.message));
+                            } else {
+                                resolve(response);
+                            }
+                        }
+                    );
+                });
+                
+                // 再添加新数据
+                const result = await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage(
+                        {
+                            type: 'addUserDatabaseData',
+                            personal_name: site,
+                            personal_acc: username,
+                            personal_pw: password
+                        },
+                        (response) => {
+                            if (chrome.runtime.lastError) {
+                                reject(new Error(chrome.runtime.lastError.message));
+                            } else {
+                                resolve(response);
+                            }
+                        }
+                    );
+                });
+                
+                if (result.status === 'success') {
+                    // 更新本地数组
+                    passwordItems[idx] = {
+                        site: site,
+                        username: username,
+                        password: password
+                    };
+                    
+                    // 重新渲染列表
+                    renderAccountList();
+                    
+                    // 关闭修改表单
+                    editForm.remove();
+                    
+                    showNotification('修改成功', 'success');
+                } else {
+                    throw new Error(result.msg || result.message || '修改失败');
+                }
+            } catch (error) {
+                console.error('修改失败:', error);
+                showNotification('修改失败: ' + error.message, 'error');
+            }
+        });
+    }
+    
     // 绑定删除事件
     function bindDeleteEvents() {
         const deleteBtns = modal.querySelectorAll('.delete-item');
@@ -713,16 +1172,11 @@ async function injectAccountManager() {
                 
                 if (confirm(`确定要删除 "${item.site}" 的账号数据吗？`)) {
                     try {
-                        // 获取当前登录用户
-                        const loggedInUser = JSON.parse(localStorage.getItem('loggedInUser'));
-                        if (!loggedInUser) return;
-                        
                         // 使用消息传递从background删除数据
                         const result = await new Promise((resolve, reject) => {
                             chrome.runtime.sendMessage(
                                 {
                                     type: 'deleteUserDatabaseData',
-                                    username: loggedInUser.username,
                                     personal_name: item.site,
                                     personal_acc: item.username
                                 },
@@ -756,68 +1210,7 @@ async function injectAccountManager() {
         });
     }
     
-    // 添加数据事件
-    const addBtn = modal.querySelector('#add-btn');
-    addBtn.addEventListener('click', async () => {
-        const site = document.getElementById('new-site').value.trim();
-        const username = document.getElementById('new-username').value.trim();
-        const password = document.getElementById('new-password').value.trim();
-        
-        if (!site || !username || !password) {
-            showNotification('请填写完整信息', 'error');
-            return;
-        }
-        
-        try {
-            // 获取当前登录用户
-            const loggedInUser = JSON.parse(localStorage.getItem('loggedInUser'));
-            if (!loggedInUser) return;
-            
-            // 使用消息传递从background添加数据
-            const result = await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage(
-                    {
-                        type: 'addUserDatabaseData',
-                        username: loggedInUser.username,
-                        personal_name: site,
-                        personal_acc: username,
-                        personal_pw: password
-                    },
-                    (response) => {
-                        if (chrome.runtime.lastError) {
-                            reject(new Error(chrome.runtime.lastError.message));
-                        } else {
-                            resolve(response);
-                        }
-                    }
-                );
-            });
-            
-            if (result.status === 'success') {
-                // 添加到本地数组
-                passwordItems.push({
-                    site: site,
-                    username: username,
-                    password: password
-                });
-                
-                // 清空表单
-                document.getElementById('new-site').value = '';
-                document.getElementById('new-username').value = '';
-                document.getElementById('new-password').value = '';
-                
-                // 重新渲染列表
-                renderAccountList();
-                
-                showNotification('添加成功', 'success');
-            } else {
-                throw new Error(result.msg || result.message || '添加失败');
-            }
-        } catch (error) {
-            console.error('添加失败:', error);
-            showNotification('添加失败: ' + error.message, 'error');
-        }
-    });
+    // 添加数据事件已在上方绑定
     
     // 渲染初始列表
     renderAccountList();
