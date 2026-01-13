@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "亚马逊品牌和URL复制插件",
+  "name": "拉森助手",
   "version": "2.0",
-  "description": "从亚马逊商品页面复制品牌名称和URL，并显示商品颜色信息",
+  "description": "提供账号管理、书签管理和常用插件",
   "permissions": [
     "activeTab",
     "clipboardWrite",
@@ -61,7 +61,30 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "复制亚马逊品牌和URL",
-    "default_popup": "popup.html"
+    "default_title": "拉森助手，你的好帮手",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon16.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["*.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "commands": {
+    "open-popup": {
+      "suggested_key": {
+        "default": "F3"
+      },
+      "description": "激活插件主页面"
+    }
   }
 }

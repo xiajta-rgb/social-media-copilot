@@ -322,35 +322,199 @@ const colorProcessor = (() => {
 })();
 
 // 监听来自popup和background的消息
-chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('收到消息:', request, '来自:', sender);
   
-  try {
-    // 处理不同类型的消息
-    switch (request.type) {
-      case 'SHOW_COLORS':
-        try {
-          colorProcessor.init();
-          sendResponse({ success: true, message: '颜色处理器已初始化' });
-        } catch (error) {
-          console.error('初始化颜色处理器失败:', error);
-          sendResponse({ success: false, error: error.message });
+  // 处理不同的消息类型
+  switch (request.type) {
+    case 'EXTRACT_BRAND_URL':
+      console.log('=== 开始处理EXTRACT_BRAND_URL消息 ===');
+      
+      // 立即处理消息，不使用async/await
+      const u = window.location.href;
+      let result = '';
+      let success = false;
+      let brandName = "未找到品牌名称";
+      
+      // 1. 直接获取页面上所有的a标签
+      const allLinks = document.querySelectorAll('a');
+      let targetLink = null;
+      
+      // 2. 遍历所有a标签，查找包含"Brand:"的链接
+      console.log('开始查找包含Brand:的链接...');
+      for (let link of allLinks) {
+        const linkText = link.textContent.trim();
+        const linkHref = link.getAttribute('href');
+        
+        // 检查文本中是否包含Brand:
+        if (linkText.includes('Brand:')) {
+          targetLink = link;
+          console.log('找到包含Brand:的链接:', linkText, linkHref);
+          break;
         }
-        return true;
-      case 'TEST_CONNECTION':
-        // 测试连接消息，用于验证content script是否正常工作
-        sendResponse({ success: true, message: 'Content script已连接', currentUrl: window.location.href });
-        return true;
-      default:
-        console.log('未知消息类型，将交给其他监听器处理:', request.type);
-        // 对于不处理的消息类型，不调用sendResponse，让消息继续传递给其他监听器
-        return false; // 关闭消息通道，让其他监听器处理
-    }
-  } catch (error) {
-    console.error('消息处理异常:', error);
-    // 不发送错误响应，让消息继续传递给background.js
-    return false;
+      }
+      
+      // 3. 如果找到目标链接，提取品牌名称
+      if (targetLink) {
+        try {
+          const linkText = targetLink.textContent.trim();
+          console.log('目标链接文本:', linkText);
+          
+          // 直接从"Brand: "后面提取品牌名称
+          if (linkText.includes('Brand:')) {
+            // 使用多种方法提取，确保万无一失
+            // 方法1: split
+            const splitResult = linkText.split('Brand:');
+            if (splitResult.length > 1) {
+              brandName = splitResult[1].trim();
+              console.log('split方法提取结果:', brandName);
+            }
+            
+            // 方法2: 正则表达式
+            const regex = /Brand:\s*(\w+)/i;
+            const regexResult = linkText.match(regex);
+            if (regexResult && regexResult[1]) {
+              brandName = regexResult[1].trim();
+              console.log('正则表达式提取结果:', brandName);
+            }
+            
+            // 方法3: 直接截取
+            const brandIndex = linkText.indexOf('Brand:');
+            if (brandIndex > -1) {
+              brandName = linkText.substring(brandIndex + 6).trim();
+              console.log('直接截取结果:', brandName);
+            }
+          }
+          
+          // 4. 额外从href中提取作为备用
+          const href = targetLink.getAttribute('href');
+          if (href && (brandName === "未找到品牌名称" || brandName === "")) {
+            console.log('从href中提取备用品牌名称:', href);
+            // 从href中提取品牌名称
+            const brandFromHref = href.match(/\/(\w+)\/b\//);
+            if (brandFromHref && brandFromHref[1]) {
+              brandName = brandFromHref[1];
+              console.log('从href提取的品牌:', brandName);
+            }
+          }
+          
+          console.log('最终提取的品牌名称:', brandName);
+          
+          // 确保品牌名称有效
+          if (!brandName || brandName === "") {
+            brandName = "未找到品牌名称";
+          }
+          
+          result = `${brandName}\n\n${u}`;
+          console.log('最终结果:', result);
+          
+          // 使用现代的Clipboard API来复制文本
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(result)
+              .then(() => {
+                showNotification('已复制到剪贴板', 'success');
+              })
+              .catch(() => {
+                // 降级使用document.execCommand
+                fallbackCopyTextToClipboard(result);
+              });
+          } else {
+            // 不支持Clipboard API，使用document.execCommand
+            fallbackCopyTextToClipboard(result);
+          }
+          
+          success = true;
+        } catch (error) {
+          console.error('Error extracting brand:', error);
+          showNotification(`提取品牌失败: ${error.message}`, 'error');
+        }
+      } else {
+        // 尝试其他方法查找品牌信息
+        console.log('未找到包含Brand:的链接，尝试其他方法...');
+        
+        // 尝试从页面中所有包含Brand的文本中提取
+        const allElements = document.querySelectorAll('*');
+        for (let element of allElements) {
+          const text = element.textContent.trim();
+          if (text.includes('Brand:')) {
+            console.log('从其他元素找到Brand:', text);
+            // 提取品牌名称
+            const brand = text.split('Brand:')[1].trim();
+            if (brand) {
+              brandName = brand;
+              break;
+            }
+          }
+        }
+        
+        // 如果仍然没找到，使用默认值
+        result = `${brandName}\n\n${u}`;
+        showNotification('已复制到剪贴板', 'success');
+        success = true;
+      }
+      
+      // 立即发送响应
+      console.log('发送响应:', { success, message: success ? '提取完成' : '未找到品牌信息', brandName });
+      sendResponse({ success: success, message: success ? '提取完成' : '未找到品牌信息', brandName: brandName });
+      return true;
+      
+    case 'SHOW_COLORS':
+      try {
+        colorProcessor.init();
+        sendResponse({ success: true, message: '颜色处理器已初始化' });
+      } catch (error) {
+        console.error('初始化颜色处理器失败:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+      return true;
+    case 'TEST_CONNECTION':
+      // 测试连接消息，用于验证content script是否正常工作
+      sendResponse({ success: true, message: 'Content script已连接', currentUrl: window.location.href });
+      return true;
+    default:
+      console.log('未知消息类型，将交给其他监听器处理:', request.type);
+      // 对于不处理的消息类型，不调用sendResponse，让消息继续传递给其他监听器
+      return false; // 关闭消息通道，让其他监听器处理
   }
 });
+
+// 辅助函数：显示通知
+function showNotification(text, type = 'success') {
+  const notification = document.createElement('div');
+  notification.textContent = text;
+  notification.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    background: ${type === 'success' ? '#333' : '#f44336'};
+    color: white;
+    border-radius: 4px;
+    z-index: 9999;
+  `;
+  document.body.appendChild(notification);
+  setTimeout(() => notification.remove(), 2000);
+}
+
+// 辅助函数：降级复制文本到剪贴板
+function fallbackCopyTextToClipboard(text) {
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-9999px';
+  textArea.style.top = '-9999px';
+  document.body.appendChild(textArea);
+  textArea.select();
+  
+  try {
+    const copySuccess = document.execCommand('copy');
+    showNotification(copySuccess ? '已复制到剪贴板' : '复制失败', copySuccess ? 'success' : 'error');
+  } catch (err) {
+    showNotification('复制失败', 'error');
+  } finally {
+    document.body.removeChild(textArea);
+  }
+}
 
 console.log('亚马逊插件Content Script已加载');

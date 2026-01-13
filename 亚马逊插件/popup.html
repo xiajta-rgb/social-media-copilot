@@ -79,17 +79,63 @@
             flex-direction: column;
             gap: 4px;
         }
-        
+
+        .function-list.row {
+            flex-direction: row;
+        }
+
+        .function-list.compact {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 4px;
+        }
+
+        .function-item.icon-only {
+            padding: 8px;
+            justify-content: center;
+            flex: 1;
+        }
+
+        .function-item.icon-only .text,
+        .function-item.icon-only .arrow {
+            display: none;
+        }
+
+        .function-item.flex-1 {
+            flex: 1;
+        }
+
         .function-item {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 8px 10px;
+            padding: 6px 8px;
             background: #f8f9fa;
             border-radius: 4px;
             cursor: pointer;
             transition: all 0.2s;
             border: 1px solid transparent;
+            font-size: 11px;
+        }
+
+        .function-item .icon {
+            width: 14px;
+            height: 14px;
+            margin-right: 6px;
+            font-size: 12px;
+        }
+
+        .function-item .text {
+            flex: 1;
+            font-size: 11px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .function-item .arrow {
+            font-size: 9px;
+            color: #999;
         }
         
         .function-item:hover {
@@ -153,35 +199,48 @@
     
     <div class="main-content">
         <div class="section">
-            <h2 class="section-title">亚马逊</h2>
-            <div class="function-list">
-                <div class="function-item" id="showColorButton">
-                    <div class="icon">🎨</div>
-                    <div class="text">颜色显示</div>
-                    <div class="arrow">›</div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="section">
             <h2 class="section-title">常用功能</h2>
             <div class="function-list">
-                <div class="function-item" id="accountButton">
+                <div class="function-item flex-1" id="accountButton">
                     <div class="icon">🔑</div>
                     <div class="text">账号管理</div>
                     <div class="arrow">›</div>
                 </div>
             </div>
+            <div class="function-list row">
+                <div class="function-item" id="addBookmarkButton" title="添加书签">
+                    <div class="icon">⭐</div>
+                    <div class="text">添加书签</div>
+                    <div class="arrow">›</div>
+                </div>
+                <div class="function-item flex-1" id="showBookmarkButton">
+                    <div class="icon">📂</div>
+                    <div class="text">我的收藏夹</div>
+                    <div class="arrow">›</div>
+                </div>
+            </div>
         </div>
         
         <div class="section">
-            <h2 class="section-title">中台功能</h2>
-            <div class="function-list">
-                <div class="function-item disabled" style="cursor: not-allowed; opacity: 0.6;">
-                    <div class="icon">🔄</div>
-                    <div class="text">待开发</div>
+            <h2 class="section-title">亚马逊</h2>
+            <div class="function-list compact">
+                <div class="function-item" id="showColorButton">
+                    <div class="icon">🎨</div>
+                    <div class="text">颜色显示</div>
                     <div class="arrow">›</div>
                 </div>
+                <div class="function-item" id="extractBrandUrlButton">
+                    <div class="icon">📋</div>
+                    <div class="text">提取品牌&网址</div>
+                    <div class="arrow">›</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">快速链接</h2>
+            <div class="function-list compact" id="quickLinksContainer">
+                <!-- 快速链接将通过JavaScript动态生成 -->
             </div>
         </div>
     </div>
@@ -208,6 +267,28 @@
         <div id="login-message" style="margin-top: 10px; font-size: 11px; color: #666;"></div>
     </div>
     
-    <script src="popup.js"></script>
+    <!-- 修改密码表单 -->
+    <div id="change-password-container" style="display: none; padding: 10px 12px; background: #f5f7fa; border-top: 1px solid #e0e0e0;">
+        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #333;">修改密码</h3>
+        <div style="margin-bottom: 10px;">
+            <label style="display: block; font-size: 12px; font-weight: 500; color: #555; margin-bottom: 4px;">旧密码</label>
+            <input type="password" id="oldPassword" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px;" placeholder="请输入旧密码">
+        </div>
+        <div style="margin-bottom: 10px;">
+            <label style="display: block; font-size: 12px; font-weight: 500; color: #555; margin-bottom: 4px;">新密码</label>
+            <input type="password" id="newPassword" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px;" placeholder="请输入新密码">
+        </div>
+        <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 500; color: #555; margin-bottom: 4px;">确认新密码</label>
+            <input type="password" id="confirmNewPassword" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px;" placeholder="请确认新密码">
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button id="cancelChangePassword" style="flex: 1; padding: 8px; background: #e0e0e0; color: #555; border: none; border-radius: 3px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;">取消</button>
+            <button id="saveNewPassword" style="flex: 1; padding: 8px; background: #4CAF50; color: white; border: none; border-radius: 3px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;">保存</button>
+        </div>
+        <div id="change-password-message" style="margin-top: 10px; font-size: 11px; color: #666;"></div>
+    </div>
+    
+    <script src="popup.js" type="module"></script>
 </body>
 </html>

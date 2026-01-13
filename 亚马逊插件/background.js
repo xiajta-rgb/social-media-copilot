@@ -335,10 +335,473 @@ async function deleteUserDatabaseData(username, personal_name, personal_acc) {
   }
 }
 
-// 确保只注册一个消息监听器，先移除所有现有监听器
-// 注意：这种方式只能移除通过该引用注册的监听器
-// 为了彻底清理，我们将使用更可靠的方式
-let existingListeners = [];
+// 7. 封装获取用户书签数据的请求函数
+async function getUserBookmarkData(username) {
+  try {
+    // 首先获取用户的ID
+    const accountResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?username=eq.${encodeURIComponent(username)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!accountResponse.ok) {
+      throw new Error(`获取用户信息失败：${accountResponse.status}`);
+    }
+
+    const accountData = await accountResponse.json();
+    if (!accountData || accountData.length === 0) {
+      throw new Error(`用户不存在`);
+    }
+
+    const userId = accountData[0].id;
+
+    // 然后查询该用户的书签数据，使用account_id进行筛选
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/bookmark?account_id=eq.${userId}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `查询书签数据失败：${response.status}`;
+      } catch {
+        errorMessage = `查询书签数据失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 尝试解析响应数据，如果失败则使用空数组
+    let data = [];
+    try {
+      data = await response.json();
+    } catch {
+      console.log("查询书签数据成功，但响应体为空");
+    }
+    
+    console.log("查询书签数据成功：", data);
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `查询书签数据成功！共 ${data.length} 条数据`,
+      data: data
+    };
+  } catch (error) {
+    console.error("查询书签数据异常：", error);
+    return { code: 500, status: 'error', msg: `查询书签数据失败：${error.message}` };
+  }
+}
+
+// 8. 封装添加用户书签数据的请求函数
+async function addUserBookmarkData(username, linkname, link) {
+  try {
+    // 首先获取用户的ID
+    const accountResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?username=eq.${encodeURIComponent(username)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!accountResponse.ok) {
+      throw new Error(`获取用户信息失败：${accountResponse.status}`);
+    }
+
+    const accountData = await accountResponse.json();
+    if (!accountData || accountData.length === 0) {
+      throw new Error(`用户不存在`);
+    }
+
+    const userId = accountData[0].id;
+
+    // 检查是否已存在相同的书签，避免重复添加
+    const existingBookmarkResponse = await fetch(
+      `${SUPABASE_CONFIG.url}/rest/v1/bookmark?account_id=eq.${userId}&link=eq.${encodeURIComponent(link)}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SUPABASE_CONFIG.key,
+          "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+        }
+      }
+    );
+
+    if (!existingBookmarkResponse.ok) {
+      throw new Error(`检查书签存在性失败：${existingBookmarkResponse.status}`);
+    }
+
+    const existingBookmarks = await existingBookmarkResponse.json();
+    if (existingBookmarks && existingBookmarks.length > 0) {
+      // 已存在相同的书签，直接返回成功，避免重复添加
+      console.log("书签已存在，无需重复添加：", existingBookmarks[0]);
+      return { 
+        code: 200, 
+        status: 'success', 
+        msg: `书签已存在，无需重复添加！`,
+        data: existingBookmarks[0]
+      };
+    }
+
+    // 然后添加关联的书签数据，只包含数据库表中实际存在的字段
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/bookmark`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      },
+      body: JSON.stringify({
+        linkname: linkname,
+        link: link,
+        account_id: userId // 设置为用户的account.id，满足外键约束
+      })
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `添加书签数据失败：${response.status}`;
+      } catch {
+        errorMessage = `添加书签数据失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 尝试解析响应数据，如果失败则使用空对象
+    let data = {};
+    try {
+      data = await response.json();
+    } catch {
+      console.log("添加书签数据成功，但响应体为空");
+      // 当响应体为空时，尝试获取刚添加的书签
+      const newBookmarkResponse = await fetch(
+        `${SUPABASE_CONFIG.url}/rest/v1/bookmark?account_id=eq.${userId}&link=eq.${encodeURIComponent(link)}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": SUPABASE_CONFIG.key,
+            "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+          }
+        }
+      );
+      
+      if (newBookmarkResponse.ok) {
+        const newBookmarks = await newBookmarkResponse.json();
+        if (newBookmarks && newBookmarks.length > 0) {
+          data = newBookmarks[0];
+          console.log("通过查询获取到新添加的书签：", data);
+        }
+      }
+    }
+    
+    console.log("添加书签数据成功：", data);
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `添加书签数据成功！`,
+      data: data
+    };
+  } catch (error) {
+    console.error("添加书签数据异常：", error);
+    return { code: 500, status: 'error', msg: `添加书签数据失败：${error.message}` };
+  }
+}
+
+// 9. 封装删除用户书签数据的请求函数
+async function deleteUserBookmarkData(username, linkname, link) {
+  try {
+    // 首先获取用户的ID
+    const accountResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?username=eq.${encodeURIComponent(username)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!accountResponse.ok) {
+      throw new Error(`获取用户信息失败：${accountResponse.status}`);
+    }
+
+    const accountData = await accountResponse.json();
+    if (!accountData || accountData.length === 0) {
+      throw new Error(`用户不存在`);
+    }
+
+    const userId = accountData[0].id;
+
+    // 然后删除关联的书签数据，使用account_id、linkname和link进行筛选
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/bookmark?account_id=eq.${userId}&linkname=eq.${encodeURIComponent(linkname)}&link=eq.${encodeURIComponent(link)}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `删除书签数据失败：${response.status}`;
+      } catch {
+        errorMessage = `删除书签数据失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+    
+    console.log("删除书签数据成功");
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `删除书签数据成功！`
+    };
+  } catch (error) {
+    console.error("删除书签数据异常：", error);
+    return { code: 500, status: 'error', msg: `删除书签数据失败：${error.message}` };
+  }
+}
+
+// 10. 封装更新用户书签数据的请求函数
+async function updateUserBookmarkData(username, oldLinkname, oldLink, newLinkname, newLink) {
+  try {
+    // 首先获取用户的ID
+    const accountResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?username=eq.${encodeURIComponent(username)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!accountResponse.ok) {
+      throw new Error(`获取用户信息失败：${accountResponse.status}`);
+    }
+
+    const accountData = await accountResponse.json();
+    if (!accountData || accountData.length === 0) {
+      throw new Error(`用户不存在`);
+    }
+
+    const userId = accountData[0].id;
+
+    // 然后更新关联的书签数据，使用account_id、oldLinkname和oldLink进行筛选
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/bookmark?account_id=eq.${userId}&linkname=eq.${encodeURIComponent(oldLinkname)}&link=eq.${encodeURIComponent(oldLink)}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      },
+      body: JSON.stringify({
+        linkname: newLinkname,
+        link: newLink
+      })
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `更新书签数据失败：${response.status}`;
+      } catch {
+        errorMessage = `更新书签数据失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+    
+    console.log("更新书签数据成功");
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `更新书签数据成功！`
+    };
+  } catch (error) {
+    console.error("更新书签数据异常：", error);
+    return { code: 500, status: 'error', msg: `更新书签数据失败：${error.message}` };
+  }
+}
+
+
+
+// 12. 封装修改用户密码的请求函数
+async function changePassword(username, oldPassword, newPassword) {
+  try {
+    // 首先验证旧密码是否正确
+    const loginResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?username=eq.${encodeURIComponent(username)}&password=eq.${encodeURIComponent(oldPassword)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!loginResponse.ok) {
+      throw new Error(`旧密码验证失败：${loginResponse.status}`);
+    }
+
+    const loginData = await loginResponse.json();
+    if (!loginData || loginData.length === 0) {
+      throw new Error(`旧密码错误`);
+    }
+
+    const userId = loginData[0].id;
+
+    // 更新密码
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?id=eq.${userId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      },
+      body: JSON.stringify({
+        password: newPassword
+      })
+    });
+
+    if (!response.ok) {
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `修改密码失败：${response.status}`;
+      } catch {
+        errorMessage = `修改密码失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    console.log("密码修改成功：", userId);
+    return {
+      code: 200,
+      status: 'success',
+      msg: `密码修改成功！`
+    };
+  } catch (error) {
+    console.error("修改密码异常：", error);
+    return {
+      code: 500,
+      status: 'error',
+      msg: `修改密码失败：${error.message}`
+    };
+  }
+}
+
+// 13. 封装添加浏览器书签的请求函数
+async function addBrowserBookmark(title, url) {
+  try {
+    console.log('添加到浏览器书签栏:', title, url);
+    
+    // 检查chrome.bookmarks API是否可用
+    if (!chrome || !chrome.bookmarks) {
+      throw new Error('浏览器书签API不可用，可能是权限未设置或浏览器不支持');
+    }
+    
+    // 先获取书签栏的实际ID，避免硬编码
+    const bookmarkBarId = await new Promise((resolve, reject) => {
+      if (!chrome.bookmarks.getTree) {
+        reject(new Error('浏览器书签API不支持getTree方法'));
+        return;
+      }
+      
+      chrome.bookmarks.getTree((tree) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        
+        // 遍历书签树，找到书签栏（考虑不同语言环境）
+        const findBookmarkBar = (nodes) => {
+          for (const node of nodes) {
+            // 支持中文和英文书签栏名称
+            if (node.title === '书签栏' || node.title === 'Bookmarks bar') {
+              return node.id;
+            }
+            if (node.children) {
+              const found = findBookmarkBar(node.children);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+        
+        const barId = findBookmarkBar(tree);
+        if (!barId) {
+          // 如果找不到书签栏，使用默认的书签栏ID或不指定parentId
+          // 不指定parentId会添加到默认位置
+          resolve(null);
+          return;
+        }
+        resolve(barId);
+      });
+    });
+    
+    // 准备创建书签的参数
+    const createParams = {
+      title: title,
+      url: url
+    };
+    
+    // 只有当找到书签栏ID时才添加parentId
+    if (bookmarkBarId) {
+      createParams.parentId = bookmarkBarId;
+    }
+    
+    // 使用chrome.bookmarks API添加书签
+    const bookmark = await new Promise((resolve, reject) => {
+      if (!chrome.bookmarks.create) {
+        reject(new Error('浏览器书签API不支持create方法'));
+        return;
+      }
+      
+      chrome.bookmarks.create(createParams, (bookmark) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        resolve(bookmark);
+      });
+    });
+    
+    console.log('已成功添加到浏览器书签栏:', bookmark);
+    return {
+      status: 'success',
+      bookmark: bookmark
+    };
+  } catch (error) {
+    console.error('添加到浏览器书签栏失败:', error);
+    return {
+      status: 'error',
+      error: error.message
+    };
+  }
+}
 
 // 重新注册一个新的消息监听器
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
@@ -461,6 +924,44 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
               code: 500,
               status: 'error',
               message: 'login处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'changePassword':
+        console.log('处理changePassword消息');
+        (async () => {
+          try {
+            let username = request.username;
+            // 如果没有提供username，从chrome.storage.local获取登录状态
+            if (!username) {
+              const storageResult = await new Promise((resolve) => {
+                chrome.storage.local.get('loggedInUser', resolve);
+              });
+              if (storageResult.loggedInUser) {
+                username = storageResult.loggedInUser.username;
+              }
+            }
+            
+            if (!username) {
+              sendResponse({
+                code: 401,
+                status: 'error',
+                message: '未找到登录用户'
+              });
+              return;
+            }
+            
+            const result = await changePassword(username, request.oldPassword, request.newPassword);
+            console.log('changePassword返回:', JSON.stringify(result));
+            sendResponse(result);
+          } catch (error) {
+            console.error('changePassword处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'changePassword处理失败: ' + error.message
             });
           }
         })();
@@ -597,6 +1098,186 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         })();
         return true;
         
+      case 'getUserBookmarkData':
+        console.log('处理getUserBookmarkData消息');
+        (async () => {
+          try {
+            let username = request.username;
+            // 如果没有提供username，从chrome.storage.local获取登录状态
+            if (!username && request.getLoggedInUser) {
+              const storageResult = await new Promise((resolve) => {
+                chrome.storage.local.get('loggedInUser', resolve);
+              });
+              if (storageResult.loggedInUser) {
+                username = storageResult.loggedInUser.username;
+              }
+            }
+            
+            if (!username) {
+              sendResponse({
+                code: 401,
+                status: 'error',
+                message: '未找到登录用户'
+              });
+              return;
+            }
+            
+            const result = await getUserBookmarkData(username);
+            console.log('getUserBookmarkData返回:', JSON.stringify(result));
+            sendResponse(result);
+          } catch (error) {
+            console.error('getUserBookmarkData处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'getUserBookmarkData处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'addUserBookmarkData':
+        console.log('处理addUserBookmarkData消息');
+        (async () => {
+          try {
+            let username = request.username;
+            // 如果没有提供username，从chrome.storage.local获取登录状态
+            if (!username) {
+              const storageResult = await new Promise((resolve) => {
+                chrome.storage.local.get('loggedInUser', resolve);
+              });
+              if (storageResult.loggedInUser) {
+                username = storageResult.loggedInUser.username;
+              }
+            }
+            
+            if (!username) {
+              sendResponse({
+                code: 401,
+                status: 'error',
+                message: '未找到登录用户'
+              });
+              return;
+            }
+            
+            const result = await addUserBookmarkData(username, request.linkname, request.link);
+            console.log('addUserBookmarkData返回:', JSON.stringify(result));
+            sendResponse(result);
+          } catch (error) {
+            console.error('addUserBookmarkData处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'addUserBookmarkData处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'deleteUserBookmarkData':
+        console.log('处理deleteUserBookmarkData消息');
+        (async () => {
+          try {
+            let username = request.username;
+            // 如果没有提供username，从chrome.storage.local获取登录状态
+            if (!username) {
+              const storageResult = await new Promise((resolve) => {
+                chrome.storage.local.get('loggedInUser', resolve);
+              });
+              if (storageResult.loggedInUser) {
+                username = storageResult.loggedInUser.username;
+              }
+            }
+            
+            if (!username) {
+              sendResponse({
+                code: 401,
+                status: 'error',
+                message: '未找到登录用户'
+              });
+              return;
+            }
+            
+            const result = await deleteUserBookmarkData(username, request.linkname, request.link);
+            console.log('deleteUserBookmarkData返回:', JSON.stringify(result));
+            sendResponse(result);
+          } catch (error) {
+            console.error('deleteUserBookmarkData处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'deleteUserBookmarkData处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'updateUserBookmarkData':
+        console.log('处理updateUserBookmarkData消息');
+        (async () => {
+          try {
+            let username = request.username;
+            // 如果没有提供username，从chrome.storage.local获取登录状态
+            if (!username) {
+              const storageResult = await new Promise((resolve) => {
+                chrome.storage.local.get('loggedInUser', resolve);
+              });
+              if (storageResult.loggedInUser) {
+                username = storageResult.loggedInUser.username;
+              }
+            }
+            
+            if (!username) {
+              sendResponse({
+                code: 401,
+                status: 'error',
+                message: '未找到登录用户'
+              });
+              return;
+            }
+            
+            const result = await updateUserBookmarkData(
+              username, 
+              request.oldLinkname, 
+              request.oldLink, 
+              request.newLinkname, 
+              request.newLink
+            );
+            console.log('updateUserBookmarkData返回:', JSON.stringify(result));
+            sendResponse(result);
+          } catch (error) {
+            console.error('updateUserBookmarkData处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'updateUserBookmarkData处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'addBrowserBookmark':
+        console.log('处理addBrowserBookmark消息');
+        (async () => {
+          try {
+            const result = await addBrowserBookmark(request.title, request.url);
+            console.log('addBrowserBookmark返回:', JSON.stringify(result));
+            sendResponse(result);
+          } catch (error) {
+            console.error('addBrowserBookmark处理失败:', error);
+            sendResponse({
+              status: 'error',
+              error: error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'EXTRACT_BRAND_URL':
+        // 这个消息应该由content script处理，background.js忽略它
+        console.log('EXTRACT_BRAND_URL消息由content script处理，background.js忽略');
+        return false; // 返回false表示不处理这个消息，让它继续传递给content script
+        
       default:
         console.error('未知消息类型:', msgType);
         sendResponse({
@@ -684,293 +1365,140 @@ function handleShowColorsRequest(request, sender, sendResponse) {
   }
 }
 
-// 处理下载数据的请求
+// 处理下载请求
 function handleDownloadRequest(request, sender, sendResponse) {
-  if (!request.data) {
-    sendResponse({ status: 'error', message: '没有数据可下载' });
+  console.log('处理下载请求:', request);
+  
+  // 检查是否提供了数据
+  if (!request.data || !request.filename) {
+    console.error('下载请求缺少必要参数:', request);
+    sendResponse({ status: 'error', message: '下载请求缺少必要参数' });
     return;
   }
   
-  // 将数据转换为JSON字符串
-  const jsonData = JSON.stringify(request.data, null, 2);
-  const blob = new Blob([jsonData], { type: 'application/json' });
+  // 将数据转换为Blob对象
+  const blob = new Blob([request.data], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   
-  // 下载文件
+  // 调用Chrome的下载API
   chrome.downloads.download({
     url: url,
-    filename: `amazon_product_data_${Date.now()}.json`,
-    saveAs: true
+    filename: request.filename,
+    conflictAction: 'uniquify',
+    saveAs: false
   }, (downloadId) => {
     if (chrome.runtime.lastError) {
       console.error('下载失败:', chrome.runtime.lastError);
-      sendResponse({ status: 'error', message: '下载失败' });
-    } else {
-      console.log('下载成功:', downloadId);
-      sendResponse({ status: 'success', message: '下载成功', downloadId });
+      sendResponse({ status: 'error', message: '下载失败: ' + chrome.runtime.lastError.message });
+      return;
     }
+    
+    console.log('下载开始，下载ID:', downloadId);
+    sendResponse({ status: 'success', downloadId: downloadId });
   });
-}
-
-// 速率限制管理器
-const rateLimitManager = (() => {
-  const requestTimestamps = new Map();
-  const DEFAULT_RATE_LIMIT = 2000; // 默认2秒请求一次
-  const RATE_LIMIT_MAP = {
-    'www.amazon.com': 2000,
-    'www.amazon.co.uk': 2000,
-    'www.amazon.de': 2000
-  };
-
-  return {
-    // 检查是否允许请求
-    checkRateLimit: (url) => {
-      const domain = new URL(url).hostname;
-      const rateLimit = RATE_LIMIT_MAP[domain] || DEFAULT_RATE_LIMIT;
-      const now = Date.now();
-      const lastRequestTime = requestTimestamps.get(domain);
-
-      if (lastRequestTime && now - lastRequestTime < rateLimit) {
-        return {
-          allowed: false,
-          waitTime: rateLimit - (now - lastRequestTime)
-        };
-      }
-
-      requestTimestamps.set(domain, now);
-      return {
-        allowed: true,
-        waitTime: 0
-      };
-    },
-
-    // 清除特定域名的请求记录
-    clearDomain: (domain) => {
-      requestTimestamps.delete(domain);
-    },
-
-    // 清除所有请求记录
-    clearAll: () => {
-      requestTimestamps.clear();
-    }
-  };
-})();
-
-// 获取随机的User-Agent
-function getRandomUserAgent() {
-  const userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:119.0) Gecko/20100101 Firefox/119.0',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36 Edg/118.0.2088.76',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 OPR/105.0.0.0'
-  ];
-  return userAgents[Math.floor(Math.random() * userAgents.length)];
-}
-
-// 验证码检测与处理
-function handleCaptcha(response) {
-  const commonCaptchaPatterns = [
-    /captcha/i,
-    /verify/i,
-    /security/i,
-    /challenge/i
-  ];
-
-  // 检查URL是否包含验证码相关关键字
-  if (commonCaptchaPatterns.some(pattern => pattern.test(response.url))) {
-    return {
-      hasCaptcha: true,
-      type: 'url_pattern'
-    };
-  }
-
-  // 检查响应状态码
-  if (response.status === 403) {
-    return {
-      hasCaptcha: true,
-      type: 'status_code_403'
-    };
-  }
-
-  return {
-    hasCaptcha: false
-  };
 }
 
 // 处理API请求
 async function handleApiRequest(request, sender, sendResponse) {
   console.log('处理API请求:', request);
   
-  if (!request.url) {
-    sendResponse({ status: 'error', message: '缺少API URL' });
-    return;
-  }
-
-  // 检查速率限制
-  const rateLimitCheck = rateLimitManager.checkRateLimit(request.url);
-  if (!rateLimitCheck.allowed) {
-    sendResponse({ 
-      status: 'rate_limited', 
-      message: '请求频率过高，请稍后重试', 
-      waitTime: rateLimitCheck.waitTime 
+  // 检查必要参数
+  if (!request.apiUrl) {
+    sendResponse({
+      code: 400,
+      status: 'error',
+      message: 'API请求缺少必要参数: apiUrl'
     });
     return;
   }
   
+  // 检查是否为POST请求
+  const isPostRequest = request.method && request.method.toUpperCase() === 'POST';
+  
+  // 构建请求选项
+  const options = {
+    method: request.method || 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      ...request.headers
+    },
+    credentials: 'include' // 包含凭证（cookie等）
+  };
+  
+  // 如果是POST请求，添加请求体
+  if (isPostRequest && request.body) {
+    options.body = JSON.stringify(request.body);
+  }
+  
   try {
-    // 构建更全面的请求头，模拟真实浏览器
-    const options = {
-      method: request.method || 'GET',
-      headers: {
-        'User-Agent': request.headers?.['User-Agent'] || getRandomUserAgent(),
-        'Accept': request.headers?.['Accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': request.headers?.['Accept-Language'] || 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Accept-Encoding': request.headers?.['Accept-Encoding'] || 'gzip, deflate, br',
-        'Connection': request.headers?.['Connection'] || 'keep-alive',
-        'Upgrade-Insecure-Requests': request.headers?.['Upgrade-Insecure-Requests'] || '1',
-        'Sec-Fetch-Dest': request.headers?.['Sec-Fetch-Dest'] || 'document',
-        'Sec-Fetch-Mode': request.headers?.['Sec-Fetch-Mode'] || 'navigate',
-        'Sec-Fetch-Site': request.headers?.['Sec-Fetch-Site'] || 'none',
-        'Sec-Fetch-User': request.headers?.['Sec-Fetch-User'] || '?1',
-        'Cache-Control': request.headers?.['Cache-Control'] || 'max-age=0',
-        'Origin': request.origin || 'https://www.amazon.com',
-        'Referer': request.referer || 'https://www.amazon.com/',
-        ...request.headers
-      },
-      credentials: request.credentials || 'include',
-      ...(request.body ? { body: JSON.stringify(request.body) } : {})
-    };
-    
     // 发送请求
-    const response = await fetch(request.url, options);
+    const response = await fetch(request.apiUrl, options);
+    const data = await response.json();
+    
+    // 返回结果
+    sendResponse({
+      code: response.status,
+      status: response.ok ? 'success' : 'error',
+      data: data,
+      message: response.ok ? '请求成功' : `请求失败: ${response.statusText}`
+    });
+  } catch (error) {
+    console.error('API请求失败:', error);
+    sendResponse({
+      code: 500,
+      status: 'error',
+      message: 'API请求失败: ' + error.message
+    });
+  }
+}
 
-    // 检查是否有验证码
-    const captchaCheck = handleCaptcha(response);
-    if (captchaCheck.hasCaptcha) {
-      sendResponse({ 
-        status: 'captcha_detected', 
-        message: '检测到验证码，请手动验证后重试',
-        captchaType: captchaCheck.type
+// 处理获取当前活动标签页请求
+function handleGetActiveTab(request, sender, sendResponse) {
+  console.log('处理获取当前活动标签页请求:', request);
+  
+  // 使用chrome.tabs.query获取当前活动标签页
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (chrome.runtime.lastError) {
+      console.error('获取当前活动标签页失败:', chrome.runtime.lastError);
+      sendResponse({
+        code: 500,
+        status: 'error',
+        message: '获取当前活动标签页失败: ' + chrome.runtime.lastError.message
       });
       return;
     }
     
-    // 检查响应状态
-    if (!response.ok) {
-      // 处理429 Too Many Requests
-      if (response.status === 429) {
-        sendResponse({ 
-          status: 'rate_limited', 
-          message: '请求被限制，请稍后重试',
-          retryAfter: response.headers.get('Retry-After') || '60'
-        });
-        return;
-      }
-      throw new Error(`HTTP错误! 状态: ${response.status}`);
-    }
-    
-    // 根据Content-Type决定如何解析响应
-    const contentType = response.headers.get('content-type');
-    let data;
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
-    } else if (contentType && contentType.includes('text/html')) {
-      data = await response.text();
-    } else {
-      data = await response.arrayBuffer();
-    }
-    
-    sendResponse({ status: 'success', data, contentType });
-  } catch (error) {
-    console.error('API请求失败:', error);
-    
-    // 特殊错误处理
-    if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-      sendResponse({ 
-        status: 'network_error', 
-        message: '网络请求失败，请检查网络连接或稍后重试',
-        details: error.message
+    if (tabs.length === 0) {
+      sendResponse({
+        code: 404,
+        status: 'error',
+        message: '未找到当前活动标签页'
       });
-    } else {
-      sendResponse({ status: 'error', message: error.message, details: error.stack });
+      return;
     }
-  }
-}
-
-// 处理获取当前活动标签页的请求
-function handleGetActiveTab(request, sender, sendResponse) {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs.length > 0) {
-      sendResponse({ status: 'success', tab: tabs[0] });
-    } else {
-      sendResponse({ status: 'error', message: '没有找到活动标签页' });
-    }
-  });
-}
-
-// 监听标签页更新事件
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  // 当标签页加载完成时
-  if (changeInfo.status === 'complete' && tab.url) {
-    // 检查是否为亚马逊页面
-    const isAmazonPage = tab.url.toLowerCase().includes('amazon');
     
-    // 如果是亚马逊页面，更新插件图标
-    if (isAmazonPage) {
-      chrome.action.setBadgeText({ text: 'ON', tabId });
-      chrome.action.setBadgeBackgroundColor({ color: '#4CAF50', tabId });
-    } else {
-      chrome.action.setBadgeText({ text: '', tabId });
-    }
+    const activeTab = tabs[0];
+    sendResponse({
+      code: 200,
+      status: 'success',
+      data: {
+        tabId: activeTab.id,
+        url: activeTab.url,
+        title: activeTab.title,
+        favIconUrl: activeTab.favIconUrl
+      }
+    });
+  });
+}
+
+// 监听键盘快捷键命令
+chrome.commands.onCommand.addListener((command) => {
+  console.log('收到键盘命令:', command);
+  
+  if (command === 'open-popup') {
+    console.log('执行激活插件主页面');
+    
+    // 激活插件弹出页面
+    chrome.action.openPopup();
   }
 });
-
-// 监听标签页激活事件
-chrome.tabs.onActivated.addListener((activeInfo) => {
-  chrome.tabs.get(activeInfo.tabId, (tab) => {
-    if (tab && tab.url) {
-      const isAmazonPage = tab.url.toLowerCase().includes('amazon');
-      if (isAmazonPage) {
-        chrome.action.setBadgeText({ text: 'ON', tabId: activeInfo.tabId });
-        chrome.action.setBadgeBackgroundColor({ color: '#4CAF50', tabId: activeInfo.tabId });
-        // 尝试注入内容脚本（如果还没有加载）
-        injectContentScript(activeInfo.tabId);
-      } else {
-        chrome.action.setBadgeText({ text: '', tabId: activeInfo.tabId });
-      }
-    }
-  });
-});
-
-// 动态注入内容脚本函数
-function injectContentScript(tabId) {
-  chrome.scripting.executeScript({
-    target: { tabId: tabId },
-    files: ['content-scripts/main.js']
-  }, (results) => {
-    if (chrome.runtime.lastError) {
-      console.error('动态注入content script失败:', chrome.runtime.lastError);
-    } else {
-      console.log('content script动态注入成功:', results);
-    }
-  });
-}
-
-// 测试连接函数
-function testContentScriptConnection(tabId, callback) {
-  chrome.tabs.sendMessage(tabId, { type: 'TEST_CONNECTION' }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error('测试连接失败:', chrome.runtime.lastError);
-      callback(false);
-    } else {
-      console.log('测试连接成功:', response);
-      callback(true, response);
-    }
-  });
-}
-
-console.log('亚马逊插件Background Service Worker已启动');
-
