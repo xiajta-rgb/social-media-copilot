@@ -81,9 +81,6 @@
   ],
   "commands": {
     "open-popup": {
-      "suggested_key": {
-        "default": "F3"
-      },
       "description": "激活插件主页面"
     }
   }
