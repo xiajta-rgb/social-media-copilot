@@ -803,6 +803,339 @@ async function addBrowserBookmark(title, url) {
   }
 }
 
+// 14. 封装获取用户提示词的请求函数
+async function getUserPrompts(username) {
+  try {
+    // 首先获取用户的ID
+    const accountResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?username=eq.${encodeURIComponent(username)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!accountResponse.ok) {
+      throw new Error(`获取用户信息失败：${accountResponse.status}`);
+    }
+
+    const accountData = await accountResponse.json();
+    if (!accountData || accountData.length === 0) {
+      throw new Error(`用户不存在`);
+    }
+
+    const userId = accountData[0].id;
+
+    // 然后查询该用户的提示词数据，使用account_id进行筛选
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/prompt?account_id=eq.${userId}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `查询提示词数据失败：${response.status}`;
+      } catch {
+        errorMessage = `查询提示词数据失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 尝试解析响应数据，如果失败则使用空数组
+    let data = [];
+    try {
+      data = await response.json();
+    } catch (error) {
+      console.error("解析提示词数据失败：", error);
+      console.log("查询提示词数据成功，但响应体格式不正确");
+    }
+    
+    console.log("查询提示词数据成功：", data);
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `查询提示词数据成功！共 ${data.length} 条数据`,
+      data: data
+    };
+  } catch (error) {
+    console.error("查询提示词数据异常：", error);
+    return { code: 500, status: 'error', msg: `查询提示词数据失败：${error.message}` };
+  }
+}
+
+// 15. 封装添加提示词的请求函数
+async function addPrompt(prompt) {
+  try {
+    // 首先获取用户的ID
+    const accountResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?username=eq.${encodeURIComponent(prompt.username)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!accountResponse.ok) {
+      throw new Error(`获取用户信息失败：${accountResponse.status}`);
+    }
+
+    const accountData = await accountResponse.json();
+    if (!accountData || accountData.length === 0) {
+      throw new Error(`用户不存在`);
+    }
+
+    const userId = accountData[0].id;
+
+    // 然后添加提示词数据，只保存数据库表中存在的字段
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/prompt`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      },
+      body: JSON.stringify({
+        promptname: prompt.promptname,
+        description: prompt.description,
+        type: prompt.type || 'text', // 设置默认类型
+        account_id: userId,
+        created_at: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `添加提示词失败：${response.status}`;
+      } catch {
+        errorMessage = `添加提示词失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 处理不同响应情况
+    let data = {};
+    // 检查是否有响应体
+    const contentType = response.headers.get('content-type');
+    if (response.status === 204 || !contentType || !contentType.includes('application/json')) {
+      // 204 No Content 或没有JSON响应体
+      console.log("添加提示词成功，响应体为空或非JSON格式");
+    } else {
+      // 尝试解析响应数据
+      try {
+        data = await response.json();
+        console.log("添加提示词成功：", data);
+      } catch (error) {
+        console.error("解析响应数据失败：", error);
+        // 即使解析失败，也认为添加成功，因为状态码是成功的
+        console.log("添加提示词成功，但响应体格式不正确");
+      }
+    }
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `添加提示词成功！`,
+      data: data
+    };
+  } catch (error) {
+    console.error("添加提示词异常：", error);
+    return { code: 500, status: 'error', msg: `添加提示词失败：${error.message}` };
+  }
+}
+
+// 16. 封装更新提示词的请求函数
+async function updatePrompt(prompt) {
+  try {
+    // 然后更新提示词数据
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/prompt?id=eq.${prompt.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      },
+      body: JSON.stringify({
+        promptname: prompt.promptname,
+        description: prompt.description,
+        updatedAt: new Date().toISOString(),
+        type: prompt.type || 'text'
+      })
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `更新提示词失败：${response.status}`;
+      } catch {
+        errorMessage = `更新提示词失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 处理不同响应情况
+    let data = {};
+    if (response.status === 204) {
+      // 204 No Content - 更新成功但没有响应体
+      console.log("更新提示词成功，响应体为空");
+    } else {
+      // 尝试解析响应数据
+      try {
+        data = await response.json();
+        console.log("更新提示词成功：", data);
+      } catch (error) {
+        console.error("解析响应数据失败：", error);
+        // 即使解析失败，也认为更新成功，因为状态码是200
+        console.log("更新提示词成功，但响应体格式不正确");
+      }
+    }
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `更新提示词成功！`,
+      data: data
+    };
+  } catch (error) {
+    console.error("更新提示词异常：", error);
+    return { code: 500, status: 'error', msg: `更新提示词失败：${error.message}` };
+  }
+}
+
+// 17. 封装删除提示词的请求函数
+async function deletePrompt(promptId) {
+  try {
+    // 删除提示词数据
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/prompt?id=eq.${promptId}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      }
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `删除提示词失败：${response.status}`;
+      } catch {
+        errorMessage = `删除提示词失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    console.log("删除提示词成功");
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `删除提示词成功！`
+    };
+  } catch (error) {
+    console.error("删除提示词异常：", error);
+    return { code: 500, status: 'error', msg: `删除提示词失败：${error.message}` };
+  }
+}
+
+// 18. 封装获取提示词分类的请求函数
+async function getCategories() {
+  try {
+    // 由于category表不存在，返回默认分类
+    const defaultCategories = [
+      { id: 'general', name: '通用', color: '#6366f1' },
+      { id: 'marketing', name: '营销', color: '#10b981' },
+      { id: 'content', name: '内容创作', color: '#f59e0b' },
+      { id: 'coding', name: '编程', color: '#8b5cf6' },
+      { id: 'other', name: '其他', color: '#6b7280' }
+    ];
+    
+    console.log("返回默认分类列表：", defaultCategories);
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `查询分类数据成功！共 ${defaultCategories.length} 条数据`,
+      data: defaultCategories
+    };
+  } catch (error) {
+    console.error("获取分类数据异常：", error);
+    return { code: 500, status: 'error', msg: `获取分类数据失败：${error.message}` };
+  }
+}
+
+// 19. 封装添加提示词分类的请求函数
+async function addCategory(category) {
+  try {
+    // 添加分类数据
+    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/category`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_CONFIG.key,
+        "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
+      },
+      body: JSON.stringify({
+        name: category.name,
+        description: category.description || '',
+        color: category.color || '#6366f1',
+        enabled: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+    });
+
+    if (!response.ok) {
+      // 尝试获取错误信息，如果失败则使用默认信息
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || `添加分类失败：${response.status}`;
+      } catch {
+        errorMessage = `添加分类失败：${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 尝试解析响应数据，如果失败则使用空对象
+    let data = {};
+    try {
+      data = await response.json();
+    } catch {
+      console.log("添加分类成功，但响应体为空");
+    }
+    
+    console.log("添加分类成功：", data);
+    
+    return { 
+      code: 200, 
+      status: 'success', 
+      msg: `添加分类成功！`,
+      data: data
+    };
+  } catch (error) {
+    console.error("添加分类异常：", error);
+    return { code: 500, status: 'error', msg: `添加分类失败：${error.message}` };
+  }
+}
+
 // 重新注册一个新的消息监听器
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   console.log('=== 消息处理开始 ===');
@@ -1268,6 +1601,126 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
             sendResponse({
               status: 'error',
               error: error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'getUserPrompts':
+        console.log('处理getUserPrompts消息');
+        (async () => {
+          try {
+            let username = request.username;
+            if (!username) {
+              const storageResult = await new Promise(resolve => chrome.storage.local.get('loggedInUser', resolve));
+              username = storageResult.loggedInUser?.username;
+            }
+            if (!username) {
+              sendResponse({ code: 401, status: 'error', message: '未找到登录用户' });
+              return;
+            }
+            const result = await getUserPrompts(username);
+            sendResponse(result);
+          } catch (error) {
+            console.error('getUserPrompts处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'getUserPrompts处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'addPrompt':
+        console.log('处理addPrompt消息');
+        (async () => {
+          try {
+            let username = request.username;
+            if (!username) {
+              const storageResult = await new Promise(resolve => chrome.storage.local.get('loggedInUser', resolve));
+              username = storageResult.loggedInUser?.username;
+            }
+            if (!username) {
+              sendResponse({ code: 401, status: 'error', message: '未找到登录用户' });
+              return;
+            }
+            const result = await addPrompt({ ...request.prompt, username });
+            sendResponse(result);
+          } catch (error) {
+            console.error('addPrompt处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'addPrompt处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'updatePrompt':
+        console.log('处理updatePrompt消息');
+        (async () => {
+          try {
+            const result = await updatePrompt(request.prompt);
+            sendResponse(result);
+          } catch (error) {
+            console.error('updatePrompt处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'updatePrompt处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'deletePrompt':
+        console.log('处理deletePrompt消息');
+        (async () => {
+          try {
+            const result = await deletePrompt(request.promptId);
+            sendResponse(result);
+          } catch (error) {
+            console.error('deletePrompt处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'deletePrompt处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'getCategories':
+        console.log('处理getCategories消息');
+        (async () => {
+          try {
+            const result = await getCategories();
+            sendResponse(result);
+          } catch (error) {
+            console.error('getCategories处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'getCategories处理失败: ' + error.message
+            });
+          }
+        })();
+        return true;
+        
+      case 'addCategory':
+        console.log('处理addCategory消息');
+        (async () => {
+          try {
+            const result = await addCategory(request.category);
+            sendResponse(result);
+          } catch (error) {
+            console.error('addCategory处理失败:', error);
+            sendResponse({
+              code: 500,
+              status: 'error',
+              message: 'addCategory处理失败: ' + error.message
             });
           }
         })();
