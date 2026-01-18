@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "拉森助手",
+  "name": "亚马逊助手",
   "version": "2.0",
-  "description": "提供账号管理、书签管理和常用插件",
+  "description": "提供账号管理、提示词管理和常用工具",
   "permissions": [
     "activeTab",
     "clipboardWrite",
     "tabs",
     "scripting",
     "downloads",
-    "storage"
+    "storage",
+    "notifications"
   ],
   "host_permissions": [
     "*://*.amazon.com/*",
@@ -61,7 +62,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "拉森助手，你的好帮手",
+    "default_title": "亚马逊助手，你的好帮手",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -75,13 +76,16 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["*.js"],
+      "resources": ["*.js", "test-shortcut.html"],
       "matches": ["<all_urls>"]
     }
   ],
   "commands": {
-    "open-popup": {
-      "description": "激活插件主页面"
+    "open-search": {
+      "description": "打开提示词搜索界面",
+      "suggested_key": {
+        "default": "Ctrl+Shift+Q"
+      }
     }
   }
 }

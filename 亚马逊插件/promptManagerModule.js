@@ -88,6 +88,23 @@ async function injectPromptManager() {
             console.log('按搜索词筛选后的提示词数量:', filteredPrompts.length);
         }
         
+        // 排序：置顶的提示词排在前面
+        filteredPrompts.sort((a, b) => {
+            // 只使用统一的pin字段，强制转换为字符串后判断置顶状态
+            const aPinString = String(a.pin);
+            const bPinString = String(b.pin);
+            const aIsPinned = aPinString === '1';
+            const bIsPinned = bPinString === '1';
+            
+            if (aIsPinned && !bIsPinned) return -1;
+            if (!aIsPinned && bIsPinned) return 1;
+            
+            // 如果都置顶或都不置顶，按更新时间排序
+            const aTime = new Date(a.updatedAt || a.created_at);
+            const bTime = new Date(b.updatedAt || b.created_at);
+            return bTime - aTime;
+        });
+        
         // 无数据时显示提示
         if (filteredPrompts.length === 0) {
             console.log('没有筛选后的提示词，显示空状态');
@@ -109,7 +126,11 @@ async function injectPromptManager() {
             console.log(`提示词详情:`, prompt);
             
             const promptCard = document.createElement('div');
-            promptCard.className = `prompt-card`;
+            // 只使用统一的pin字段，强制转换为字符串后判断置顶状态
+            const pinString = String(prompt.pin);
+            const isPinned = pinString === '1';
+            console.log(`渲染卡片时的置顶状态: id=${prompt.id}, pin=${prompt.pin}, isPinned=${isPinned}`);
+            promptCard.className = `prompt-card ${isPinned ? 'pinned' : ''}`;
             promptCard.dataset.promptId = prompt.id;
             
             try {
@@ -117,25 +138,34 @@ async function injectPromptManager() {
                     <div class="prompt-card-header">
                         <h4 class="prompt-card-title">${prompt.promptname || '未命名'}</h4>
                         <div class="prompt-card-meta">
-                            <span class="prompt-card-category">${prompt.type || '默认'}</span>
-                            <span>${new Date(prompt.updatedAt || prompt.created_at).toLocaleDateString()}</span>
-                        </div>
+                        <span class="prompt-card-category">${prompt.type || '默认'}</span>
+                        <span class="prompt-card-time">
+                            ${(() => {
+                                const updateTime = prompt.updatedAt || prompt.created_at;
+                                console.log(`提示词 ${prompt.promptname} 的时间字段值:`, prompt.updatedAt, prompt.created_at, prompt.updated_at);
+                                console.log(`计算的更新时间:`, updateTime);
+                                const dateObj = new Date(updateTime);
+                                console.log(`转换后的Date对象:`, dateObj);
+                                return dateObj.toLocaleString();
+                            })()}
+                        </span>
                     </div>
                     <div class="prompt-card-content">${prompt.description || ''}</div>
                     <div class="prompt-card-actions">
-                        <button class="card-action-btn edit-btn" data-prompt-id="${prompt.id}">编辑</button>
-                        <button class="card-action-btn delete-btn" data-prompt-id="${prompt.id}">删除</button>
-                    </div>
+                <button class="card-action-btn pin-btn" data-prompt-id="${prompt.id}" title="${isPinned ? '取消置顶' : '置顶'}">${isPinned ? '📌' : '📍'}</button>
+                <button class="card-action-btn edit-btn" data-prompt-id="${prompt.id}" title="编辑">✏️</button>
+                <button class="card-action-btn delete-btn" data-prompt-id="${prompt.id}" title="删除">🗑️</button>
+            </div>
                 `;
                 
                 // 添加点击事件
                 promptCard.addEventListener('click', (e) => {
-                    // 如果点击的是按钮，不触发卡片详情
+                    // 如果点击的是按钮，不触发编辑
                     if (e.target.closest('.card-action-btn')) {
                         e.stopPropagation();
                         return;
                     }
-                    showPromptDetail(prompt);
+                    showEditPromptForm(prompt);
                 });
                 
                 // 添加编辑事件
@@ -148,6 +178,12 @@ async function injectPromptManager() {
                 promptCard.querySelector('.delete-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
                     deletePrompt(prompt.id);
+                });
+                
+                // 添加置顶事件
+                promptCard.querySelector('.pin-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    pinPrompt(prompt.id);
                 });
                 
                 promptList.appendChild(promptCard);
@@ -194,11 +230,108 @@ async function injectPromptManager() {
             console.log('promptsResult.data.length:', promptsResult.data ? promptsResult.data.length : 0);
             
             if (promptsResult.status === 'success' && promptsResult.data) {
-                prompts = promptsResult.data;
+                // 保存原始数据
+                let originalData = promptsResult.data;
+                console.log('从background获取的原始数据:', originalData);
+                
+                // 详细检查每个提示词的pin字段
+                originalData.forEach((prompt, index) => {
+                    console.log(`提示词 ${index + 1} 的原始数据:`, {
+                        id: prompt.id,
+                        promptname: prompt.promptname,
+                        pin: prompt.pin,
+                        pinType: typeof prompt.pin,
+                        hasPin: 'pin' in prompt
+                    });
+                });
+                
+                // 确保每个提示词都有pin字段，默认值为false
+                originalData = originalData.map(prompt => {
+                    let mappedPin = '0';
+                    
+                    // 非常详细地记录原始数据
+                    console.log('=== 处理单个提示词的pin字段 ===');
+                    console.log('提示词ID:', prompt.id);
+                    console.log('原始pin值:', prompt.pin);
+                    console.log('原始pin类型:', typeof prompt.pin);
+                    console.log('是否有pin字段:', 'pin' in prompt);
+                    console.log('原始pinned值:', prompt.pinned);
+                    console.log('原始pinned类型:', typeof prompt.pinned);
+                    console.log('是否有pinned字段:', 'pinned' in prompt);
+                    
+                    // 处理各种可能的输入格式，强制转换为字符串"1"或"0"
+                    let rawValue = null;
+                    if ('pin' in prompt) {
+                        rawValue = prompt.pin;
+                    } else if ('pinned' in prompt) {
+                        // 兼容旧的pinned字段
+                        rawValue = prompt.pinned;
+                    }
+                    
+                    // 强制转换为字符串后再处理
+                    const stringValue = String(rawValue);
+                    console.log('原始值:', rawValue, '类型:', typeof rawValue, '转换为字符串:', stringValue);
+                    
+                    // 基于字符串值判断最终结果
+                    mappedPin = (stringValue === 'true' || stringValue === 'TRUE' || stringValue === '1') ? '1' : '0';
+                    console.log('最终转换结果:', mappedPin);
+                    
+                    // 统一使用pin字段，与Supabase保持一致
+                    const mappedPrompt = {
+                        ...prompt,
+                        pin: mappedPin      // 与Supabase对应的统一字段名
+                    };
+                    
+                    console.log('处理后的pin值:', mappedPrompt.pin);
+                    console.log('处理后的pin类型:', typeof mappedPrompt.pin);
+                    console.log('处理后的pinned值:', mappedPrompt.pinned);
+                    console.log('处理后的pinned类型:', typeof mappedPrompt.pinned);
+                    console.log('=== 处理单个提示词的pin字段结束 ===');
+                    console.log(`处理后的提示词:`, {
+                        id: mappedPrompt.id,
+                        promptname: mappedPrompt.promptname,
+                        pin: mappedPrompt.pin,
+                        pinType: typeof mappedPrompt.pin,
+                        pinned: mappedPrompt.pinned,
+                        pinnedType: typeof mappedPrompt.pinned
+                    });
+                    return mappedPrompt;
+                });
+                
+                // 修复数据问题：检查是否所有updatedAt都相同
+                const allUpdateTimes = originalData.map(p => p.updatedAt || p.created_at);
+                const isAllSameTime = allUpdateTimes.every(time => time === allUpdateTimes[0]);
+                console.log('所有更新时间是否相同:', isAllSameTime);
+                console.log('所有更新时间列表:', allUpdateTimes);
+                
+                // 如果所有时间都相同，可能是background数据有问题，尝试修复
+                if (isAllSameTime && allUpdateTimes[0]) {
+                    console.log('检测到所有更新时间相同，尝试修复...');
+                    originalData.forEach((prompt, index) => {
+                        // 使用created_at作为备用时间
+                        if (prompt.created_at) {
+                            prompt.updatedAt = prompt.created_at;
+                        }
+                    });
+                }
+                
+                prompts = originalData;
                 console.log('更新本地prompts变量，当前数量:', prompts.length);
                 
                 // 检查prompts变量的内容
                 console.log('prompts变量的内容:', prompts);
+                
+                // 添加时间字段和置顶字段调试信息
+                console.log('=== 时间和置顶字段调试信息 ===');
+                prompts.forEach((prompt, index) => {
+                    console.log(`提示词 ${index + 1} (${prompt.promptname}) 的字段:`);
+                    console.log(`- updatedAt: ${JSON.stringify(prompt.updatedAt)}, 类型: ${typeof prompt.updatedAt}`);
+                    console.log(`- updated_at: ${JSON.stringify(prompt.updated_at)}, 类型: ${typeof prompt.updated_at}`);
+                    console.log(`- createdAt: ${JSON.stringify(prompt.createdAt)}, 类型: ${typeof prompt.createdAt}`);
+                    console.log(`- created_at: ${JSON.stringify(prompt.created_at)}, 类型: ${typeof prompt.created_at}`);
+                    console.log(`- pin (来自Supabase): ${JSON.stringify(prompt.pin)}, 类型: ${typeof prompt.pin}`);
+                    console.log(`- pinned (前端使用): ${JSON.stringify(prompt.pinned)}, 类型: ${typeof prompt.pinned}`);
+                });
             } else {
                 console.error('获取提示词数据失败:', promptsResult.msg || promptsResult.message);
             }
@@ -496,22 +629,36 @@ async function injectPromptManager() {
             transform: translateY(-1px);
         }
         
+        /* 加载状态样式 */
+        .save-btn:disabled {
+            background: #93c5fd;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        
+        .save-btn.loading::after {
+            content: '...';
+            margin-left: 5px;
+        }
+        
         /* 提示词列表 */
         .prompt-list {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 8px;
+            align-items: start;
         }
         
         /* 提示词卡片 */
         .prompt-card {
             background: white;
             border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 16px;
+            border-radius: 6px;
+            padding: 10px;
             transition: all 0.2s;
             cursor: pointer;
             position: relative;
+            min-height: 120px;
         }
         
         .prompt-card:hover {
@@ -530,25 +677,26 @@ async function injectPromptManager() {
             top: 12px;
             right: 12px;
             font-size: 16px;
+            z-index: 10;
         }
         
         .prompt-card-header {
-            margin-bottom: 12px;
+            margin-bottom: 5px;
         }
         
         .prompt-card-title {
-            margin: 0 0 4px 0;
-            font-size: 16px;
+            margin: 0 0 2px 0;
+            font-size: 14px;
             font-weight: 600;
             color: #1e293b;
         }
         
         .prompt-card-meta {
-            font-size: 12px;
+            font-size: 10px;
             color: #64748b;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
         }
         
         .prompt-card-category {
@@ -562,21 +710,21 @@ async function injectPromptManager() {
         }
         
         .prompt-card-content {
-            font-size: 14px;
+            font-size: 12px;
             color: #334155;
-            line-height: 1.5;
-            margin-bottom: 12px;
+            line-height: 1.3;
+            margin-bottom: 5px;
             overflow: hidden;
             display: -webkit-box;
-            -webkit-line-clamp: 3;
+            -webkit-line-clamp: 4;
             -webkit-box-orient: vertical;
         }
         
         .prompt-card-tags {
             display: flex;
             flex-wrap: wrap;
-            gap: 4px;
-            margin-bottom: 12px;
+            gap: 3px;
+            margin-bottom: 5px;
         }
         
         .prompt-card-tag {
@@ -601,13 +749,18 @@ async function injectPromptManager() {
         }
         
         .card-action-btn {
-            padding: 6px 10px;
+            padding: 6px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 500;
             transition: all 0.2s;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         .edit-btn {
@@ -626,6 +779,15 @@ async function injectPromptManager() {
         
         .delete-btn:hover {
             background: #fecaca;
+        }
+        
+        .pin-btn {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .pin-btn:hover {
+            background: #fde68a;
         }
         
         /* 空状态 */
@@ -692,7 +854,23 @@ async function injectPromptManager() {
         .form-group textarea {
             resize: vertical;
             min-height: 120px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .checkbox-container input[type="checkbox"] {
+            margin: 0;
+            width: auto;
+        }
+        
+        .checkbox-container label {
+            display: inline;
+            margin: 0;
+            font-weight: 500;
         }
         
         /* 标签输入 */
@@ -794,44 +972,89 @@ async function injectPromptManager() {
         }
     `;
     
-    // 显示通知
-    function showNotification(message, type = 'info') {
-        const notification = document.createElement('div');
-        notification.className = 'prompt-notification';
-        notification.textContent = message;
-        
-        // 设置不同类型的通知颜色
-        switch(type) {
-            case 'success':
-                notification.style.background = '#10b981';
-                break;
-            case 'error':
-                notification.style.background = '#ef4444';
-                break;
-            case 'warning':
-                notification.style.background = '#f59e0b';
-                break;
-            default:
-                notification.style.background = '#4285F4';
-        }
-        
-        document.body.appendChild(notification);
-        
-        // 显示通知
-        setTimeout(() => {
-            notification.classList.add('show');
-        }, 10);
-        
-        // 隐藏通知
-        setTimeout(() => {
-            notification.classList.remove('show');
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
-                }
-            }, 300);
-        }, 3000);
+    // 记录详细日志
+function logPinAction(action, details) {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+        timestamp,
+        action,
+        details,
+        stack: new Error().stack
+    };
+    console.log(`[${timestamp}] PIN_ACTION: ${action}`, details);
+    
+    // 将日志保存到localStorage，以便后续查看完整报告
+    let pinLogs = JSON.parse(localStorage.getItem('pinActionLogs')) || [];
+    pinLogs.push(logEntry);
+    // 只保留最近100条日志
+    if (pinLogs.length > 100) {
+        pinLogs = pinLogs.slice(-100);
     }
+    localStorage.setItem('pinActionLogs', JSON.stringify(pinLogs));
+}
+
+// 输出完整的LOG报告
+function exportPinLogs() {
+    const logs = JSON.parse(localStorage.getItem('pinActionLogs')) || [];
+    const logReport = {
+        generatedAt: new Date().toISOString(),
+        totalLogs: logs.length,
+        logs: logs
+    };
+    
+    // 创建并下载日志文件
+    const blob = new Blob([JSON.stringify(logReport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pin-action-logs-${new Date().toISOString().slice(0, 19)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    console.log('完整的LOG报告已下载:', logReport);
+    return logReport;
+}
+
+// 显示通知
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = 'prompt-notification';
+    notification.textContent = message;
+    
+    // 设置不同类型的通知颜色
+    switch(type) {
+        case 'success':
+            notification.style.background = '#10b981';
+            break;
+        case 'error':
+            notification.style.background = '#ef4444';
+            break;
+        case 'warning':
+            notification.style.background = '#f59e0b';
+            break;
+        default:
+            notification.style.background = '#4285F4';
+    }
+    
+    document.body.appendChild(notification);
+    
+    // 显示通知
+    setTimeout(() => {
+        notification.classList.add('show');
+    }, 10);
+    
+    // 隐藏通知
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }, 3000);
+}
     
     // 创建弹窗元素
     const modal = document.createElement('div');
@@ -859,8 +1082,10 @@ async function injectPromptManager() {
                 <!-- 操作栏 -->
                 <div class="prompt-actions">
                     <h3 id="current-category-title">所有提示词</h3>
-                    <button class="refresh-prompt-btn" id="refresh-prompt-btn">🔄 刷新</button>
-                    <button class="add-prompt-btn" id="add-prompt-btn">+ 添加提示词</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="add-prompt-btn" id="add-prompt-btn">+ 添加提示词</button>
+                        <button style="padding: 10px 20px; background: #10b981; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s;" id="test-pin-btn">测试pin字段</button>
+                    </div>
                 </div>
                 
                 <!-- 提示词列表 -->
@@ -879,25 +1104,11 @@ async function injectPromptManager() {
     const promptList = modal.querySelector('#prompt-list');
     const searchInput = modal.querySelector('#prompt-search');
     const addPromptBtn = modal.querySelector('#add-prompt-btn');
-    const refreshPromptBtn = modal.querySelector('#refresh-prompt-btn');
     const addCategoryBtn = modal.querySelector('#add-category-btn');
+    const testPinBtn = modal.querySelector('#test-pin-btn');
     const currentCategoryTitle = modal.querySelector('#current-category-title');
     
-    // 为刷新按钮添加点击事件
-    refreshPromptBtn.addEventListener('click', async () => {
-        refreshPromptBtn.innerHTML = '🔄 刷新中...';
-        refreshPromptBtn.disabled = true;
-        try {
-            await fetchPromptsData();
-            showNotification('提示词数据已刷新', 'success');
-        } catch (error) {
-            console.error('刷新数据失败:', error);
-            showNotification('刷新数据失败', 'error');
-        } finally {
-            refreshPromptBtn.innerHTML = '🔄 刷新';
-            refreshPromptBtn.disabled = false;
-        }
-    });
+
     
     // 当前选中的分类
     let currentCategoryId = 'all';
@@ -1046,7 +1257,7 @@ async function injectPromptManager() {
         
         formModal.innerHTML = `
             <h3 style="margin-top: 0; margin-bottom: 24px;">${isEdit ? '编辑提示词' : '添加提示词'}</h3>
-            <form id="prompt-form">
+            <form id="prompt-form" action="#" method="post">
                 <div class="form-group">
                     <label for="form-title">标题 *</label>
                     <input type="text" id="form-title" required value="${prompt ? prompt.promptname : ''}">
@@ -1057,17 +1268,38 @@ async function injectPromptManager() {
                     <textarea id="form-content" required>${prompt ? prompt.description : ''}</textarea>
                 </div>
                 <div class="form-group">
-                        <label for="form-tags">标签 (按回车键添加)</label>
-                        <div class="tags-input" id="form-tags-input">
-                            ${prompt && Array.isArray(prompt.tags) ? prompt.tags.map(tag => `<span class="tag">${tag}<span class="tag-remove">×</span></span>`).join('') : ''}
-                            <input type="text" id="tag-input" placeholder="添加标签...">
-                        </div>
-                    </div>
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="form-pinned" ${prompt && prompt.pinned ? 'checked' : ''}> 置顶
-                    </label>
+                    <label for="form-type">类型</label>
+                    <input type="text" id="form-type" value="${prompt ? prompt.type || '' : ''}" placeholder="自定义类型">
                 </div>
+                <div class="form-group">
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="form-pinned" ${(() => {
+                            // 优先使用pin字段，兼容pinned字段
+                            // 正确处理字符串或数字类型："1"或1表示置顶，"0"或0表示未置顶
+                            const pinValue = prompt ? (prompt.pin ?? prompt.pinned) : false;
+                            const isPinned = pinValue === true || pinValue === 'true' || pinValue === 'TRUE' || pinValue === 1 || pinValue === '1';
+                            console.log(`设置复选框的提示词数据:`, prompt);
+                            console.log(`提示词的pin值:`, pinValue, '类型:', typeof pinValue);
+                            console.log(`最终复选框状态:`, isPinned);
+                            return isPinned ? 'checked' : '';
+                        })()}> 
+                        <label for="form-pinned">置顶</label>
+                    </div>
+                </div>
+                ${prompt ? `
+                <div class="form-group">
+                    <div class="form-meta-info">
+                        <p style="margin: 5px 0; font-size: 12px; color: #64748b;">
+                            创建时间: ${new Date(prompt.createdAt || prompt.created_at).toLocaleString()}
+                        </p>
+                        <p style="margin: 5px 0; font-size: 12px; color: #64748b;">
+                            更新时间: ${new Date(prompt.updatedAt || prompt.updated_at).toLocaleString()}
+                        </p>
+                        <p style="margin: 5px 0; font-size: 12px; color: #64748b;">
+                            调试信息 - updatedAt: ${JSON.stringify(prompt.updatedAt)}, updated_at: ${JSON.stringify(prompt.updated_at)}
+                        </p>
+                    </div>
+                </div>` : ''}
                 <div class="form-actions">
                     <button type="button" class="cancel-btn" id="form-cancel">取消</button>
                     <button type="submit" class="save-btn">保存</button>
@@ -1090,75 +1322,121 @@ async function injectPromptManager() {
         `;
         document.body.appendChild(overlay);
         
-        // 标签输入处理
-        const tagsInput = formModal.querySelector('#form-tags-input');
-        const tagInput = formModal.querySelector('#tag-input');
-        const tags = prompt ? [...prompt.tags] : [];
-        
-        function updateTagsDisplay() {
-            // 移除所有标签元素
-            const existingTags = tagsInput.querySelectorAll('.tag');
-            existingTags.forEach(tag => tag.remove());
-            
-            // 重新渲染标签
-            tags.forEach(tag => {
-                const tagElement = document.createElement('span');
-                tagElement.className = 'tag';
-                tagElement.innerHTML = `${tag}<span class="tag-remove">×</span>`;
-                tagElement.querySelector('.tag-remove').addEventListener('click', () => {
-                    const index = tags.indexOf(tag);
-                    if (index > -1) {
-                        tags.splice(index, 1);
-                        updateTagsDisplay();
-                    }
-                });
-                tagsInput.insertBefore(tagElement, tagInput.lastChild);
-            });
-        }
-        
-        tagInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && tagInput.value.trim()) {
-                e.preventDefault();
-                const tag = tagInput.value.trim();
-                if (!tags.includes(tag)) {
-                    tags.push(tag);
-                    tagInput.value = '';
-                    updateTagsDisplay();
-                }
-            }
-        });
-        
         // 表单提交事件
         const form = formModal.querySelector('#prompt-form');
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+            e.stopPropagation();
             
             const promptname = form.querySelector('#form-title').value.trim();
             const description = form.querySelector('#form-content').value.trim();
-            const pinned = form.querySelector('#form-pinned').checked;
+            const type = form.querySelector('#form-type').value;
+            // 获取置顶状态
+            const pinnedCheckbox = form.querySelector('#form-pinned');
+            
+            // 非常详细地记录复选框的状态
+            console.log('=== 复选框检查 ===');
+            console.log('复选框元素:', pinnedCheckbox);
+            console.log('复选框是否存在:', !!pinnedCheckbox);
+            console.log('复选框的checked属性:', pinnedCheckbox ? pinnedCheckbox.checked : '无复选框');
+            console.log('checked属性的类型:', pinnedCheckbox ? typeof pinnedCheckbox.checked : 'N/A');
+            
+            const pinned = pinnedCheckbox ? pinnedCheckbox.checked : false;
+            console.log('获取到的pinned值:', pinned, '类型:', typeof pinned);
+            
+            // 将布尔值转换为字符串类型的"1"或"0"，以兼容后端的text属性
+            const finalPinned = Boolean(pinned) ? '1' : '0';
+            console.log('最终的finalPinned值:', finalPinned, '类型:', typeof finalPinned);
+            console.log('finalPinned是否为字符串:', typeof finalPinned === 'string');
+            console.log('finalPinned === "1":', finalPinned === '1');
+            console.log('finalPinned === "0":', finalPinned === '0');
+            console.log('=== 复选框检查结束 ===');
             
             if (!promptname || !description) {
                 showNotification('请填写标题和内容', 'error');
-                return;
+                return false;
             }
             
+            // 获取保存按钮并设置加载状态
+            const saveBtn = form.querySelector('.save-btn');
+            const originalText = saveBtn.textContent;
+            saveBtn.disabled = true;
+            saveBtn.classList.add('loading');
+            
             try {
+                // 创建当前时间对象用于更新
+                const currentTime = new Date();
+                const timeString = currentTime.toISOString();
+                console.log('=== 保存时的时间信息 ===');
+                console.log('当前时间对象:', currentTime);
+                console.log('ISO字符串:', timeString);
+                console.log('表单中的pinned状态:', {
+                    pinned: form.querySelector('#form-pinned').checked,
+                    pinnedVar: pinned,
+                    type: typeof pinned
+                });
+                console.log('要保存的promptData:', {
+                    promptname,
+                    description,
+                    type,
+                    pinned,
+                    updatedAt: timeString
+                });
+                
+                // 直接使用与Supabase对应的字段名"pin"
                 const promptData = {
                     promptname,
                     description,
-                    tags,
-                    pinned
+                    type,
+                    pin: finalPinned, // 使用确保是数字类型的finalPinned
+                    updatedAt: timeString
                 };
+                console.log('使用Supabase字段名"pin":', promptData);
+                
+                // 获取当前登录用户信息
+                const storageResult = await new Promise(resolve => chrome.storage.local.get('loggedInUser', resolve));
+                const loggedInUser = storageResult.loggedInUser;
+                console.log('当前登录用户:', loggedInUser);
                 
                 let result;
                 if (isEdit) {
                     // 更新提示词
+                    // 先检查原始prompt对象是否包含pinned属性
+                    console.log('原始prompt对象:', prompt);
+                    console.log('原始prompt对象是否包含pinned属性:', 'pinned' in prompt);
+                    console.log('原始prompt对象的pinned值:', prompt.pinned);
+                    
+                    // 统一使用与Supabase对应的字段名"pin"
+                    const finalPrompt = { 
+                        ...prompt, 
+                        ...promptData,
+                        pin: promptData.pin // 明确使用表单中的pin值
+                    };
+                    console.log('finalPrompt使用pin字段:', finalPrompt);
+                    console.log('发送给background的更新数据:', finalPrompt);
+                    console.log('finalPrompt中的pin值:', finalPrompt.pin, '类型:', typeof finalPrompt.pin);
+                    
+                    // 确保message.prompt包含pin字段和username
+                    const message = {
+                        type: 'updatePrompt',
+                        username: loggedInUser?.username,
+                        prompt: {
+                            ...finalPrompt,
+                            pin: finalPrompt.pin // 明确包含pin字段
+                        }
+                    };
+                    
+                    console.log('=== 发送消息到Background开始 ===');
+                    console.log('消息类型:', message.type);
+                    console.log('消息prompt对象:', message.prompt);
+                    console.log('pin字段是否存在:', 'pin' in message.prompt);
+                    console.log('pin字段值:', message.prompt.pin, '类型:', typeof message.prompt.pin);
+                    console.log('发送的完整消息:', message);
+                    console.log('发送的username:', message.username);
+                    console.log('=== 发送消息到Background结束 ===');
+                    
                     result = await new Promise((resolve, reject) => {
-                        chrome.runtime.sendMessage(
-                            { 
-                                type: 'updatePrompt', 
-                                prompt: { ...prompt, ...promptData } 
-                            },
+                        chrome.runtime.sendMessage(message,
                             (response) => {
                                 if (chrome.runtime.lastError) {
                                     reject(new Error(chrome.runtime.lastError.message));
@@ -1169,10 +1447,34 @@ async function injectPromptManager() {
                         );
                     });
                 } else {
-                    // 添加提示词
+                    // 添加提示词时设置创建时间和更新时间
+                    // 确保新增提示词使用与Supabase对应的字段名"pin"
+                    console.log('新增提示词时的pin值:', promptData.pin, '类型:', typeof promptData.pin);
+                    const newPromptData = {
+                        ...promptData,
+                        createdAt: timeString,
+                        updatedAt: timeString
+                    };
+                    console.log('新增提示词的数据:', newPromptData);
+                    console.log('新增提示词的pin值:', newPromptData.pin, '类型:', typeof newPromptData.pin);
+                    
+                    // 确保message.prompt包含pin字段和username，并且pin是真正的布尔值
+                    const message = {
+                        type: 'addPrompt',
+                        username: loggedInUser?.username,
+                        prompt: {
+                            ...newPromptData,
+                            // 确保pin是字符串类型的"1"或"0"，以兼容后端的text属性
+                            pin: newPromptData.pin === true || newPromptData.pin === 1 || newPromptData.pin === '1' ? '1' : '0',
+                            username: loggedInUser?.username // 同时在prompt对象中也包含username
+                        }
+                    };
+                    console.log('添加提示词发送到background的完整消息:', message);
+                    console.log('添加提示词的pin值:', message.prompt.pin, '类型:', typeof message.prompt.pin);
+                    console.log('添加提示词的username:', message.username, message.prompt.username);
+                    
                     result = await new Promise((resolve, reject) => {
-                        chrome.runtime.sendMessage(
-                            { type: 'addPrompt', prompt: promptData },
+                        chrome.runtime.sendMessage(message,
                             (response) => {
                                 if (chrome.runtime.lastError) {
                                     reject(new Error(chrome.runtime.lastError.message));
@@ -1199,6 +1501,13 @@ async function injectPromptManager() {
             } catch (error) {
                 console.error('保存提示词失败:', error);
                 showNotification('保存失败: ' + error.message, 'error');
+            } finally {
+                // 无论成功还是失败，都恢复保存按钮状态
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.classList.remove('loading');
+                    saveBtn.textContent = originalText;
+                }
             }
         });
         
@@ -1215,38 +1524,181 @@ async function injectPromptManager() {
         });
     }
     
-    // 删除提示词
-    async function deletePrompt(promptId) {
-        if (!confirm('确定要删除这个提示词吗？')) {
-            return;
-        }
+    // 置顶/取消置顶提示词
+async function pinPrompt(promptId) {
+    try {
+        // 记录操作开始
+        logPinAction('START', { promptId });
         
-        try {
-            const result = await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage(
-                    { type: 'deletePrompt', promptId },
-                    (response) => {
-                        if (chrome.runtime.lastError) {
-                            reject(new Error(chrome.runtime.lastError.message));
-                        } else {
-                            resolve(response);
-                        }
-                    }
-                );
-            });
-            
-            if (result.status === 'success') {
-                // 重新获取最新数据
-                await fetchPromptsData();
-                showNotification('提示词删除成功', 'success');
-            } else {
-                throw new Error(result.message || '删除失败');
-            }
-        } catch (error) {
-            console.error('删除提示词失败:', error);
-            showNotification('删除失败: ' + error.message, 'error');
+        // 获取当前登录用户信息
+        console.log('🔍 调试：获取登录用户信息');
+        const storageResult = await new Promise(resolve => chrome.storage.local.get('loggedInUser', resolve));
+        console.log('   storageResult:', storageResult);
+        const loggedInUser = storageResult.loggedInUser;
+        console.log('   loggedInUser:', loggedInUser);
+        console.log('   typeof loggedInUser:', typeof loggedInUser);
+        console.log('   是否有username:', 'username' in (loggedInUser || {}));
+        console.log('   username值:', loggedInUser?.username);
+        
+        logPinAction('USER_INFO', { loggedInUser });
+        
+        // 检查用户是否已登录
+        if (!loggedInUser || !loggedInUser.username) {
+            console.error('❌ 用户未登录或没有username');
+            logPinAction('ERROR', { message: '用户未登录' });
+            showNotification('请先登录再执行此操作', 'error');
+            throw new Error('用户未登录');
         }
+        console.log('✅ 用户已登录，username:', loggedInUser.username);
+        
+        // 找到当前提示词
+        console.log('🔍 调试：查找当前提示词');
+        console.log('   查找的promptId:', promptId);
+        console.log('   typeof promptId:', typeof promptId);
+        console.log('   prompts数组长度:', prompts.length);
+        const currentPrompt = prompts.find(p => p.id === promptId);
+        console.log('   找到的currentPrompt:', currentPrompt);
+        if (!currentPrompt) {
+            console.error('❌ 未找到提示词ID:', promptId);
+            throw new Error('未找到提示词');
+        }
+        console.log('✅ 找到提示词，ID:', currentPrompt.id);
+        logPinAction('FOUND_PROMPT', { promptId, prompt: currentPrompt });
+        
+        // 只使用统一的pin字段，强制转换为字符串后判断当前状态
+        console.log('🔍 调试：处理pin字段');
+        console.log('   当前提示词的pin值:', currentPrompt.pin);
+        console.log('   typeof currentPrompt.pin:', typeof currentPrompt.pin);
+        console.log('   是否有pinned字段:', 'pinned' in currentPrompt);
+        console.log('   pinned值:', currentPrompt.pinned);
+        
+        const pinString = String(currentPrompt.pin);
+        const currentPinState = (pinString === 'true' || pinString === '1');
+        console.log('   pinString:', pinString);
+        console.log('   currentPinState:', currentPinState);
+        
+        const newPinValue = currentPinState ? '0' : '1';
+        console.log('   计算新pin值:', newPinValue, '类型:', typeof newPinValue);
+        logPinAction('STATE_CONVERT', { pinString, currentPinState });
+        logPinAction('STATE_CHANGE', {
+            promptId,
+            currentPinState,
+            currentPinType: typeof currentPinState,
+            newPinValue,
+            newPinType: typeof newPinValue,
+            rawPin: currentPrompt.pin,
+            rawPinned: currentPrompt.pinned
+        });
+        
+        // 构建更新数据，确保只包含必要字段
+        console.log('🔍 调试：构建更新数据');
+        const updatedPrompt = {
+            id: currentPrompt.id,
+            pin: newPinValue, // 使用字符串'1'表示置顶，'0'表示未置顶
+            updatedAt: new Date().toISOString()
+        };
+        console.log('   updatedPrompt:', updatedPrompt);
+        console.log('   updatedPrompt.id:', updatedPrompt.id);
+        console.log('   updatedPrompt.pin:', updatedPrompt.pin, '类型:', typeof updatedPrompt.pin);
+        console.log('   updatedAt:', updatedPrompt.updatedAt);
+        
+        logPinAction('PREPARE_UPDATE', { updatedPrompt, newPinValue, newPinType: typeof newPinValue });
+        
+        // 发送更新请求
+        console.log('🔍 调试：发送updatePrompt消息');
+        const message = {
+            type: 'updatePrompt',
+            prompt: updatedPrompt,
+            username: loggedInUser.username
+        };
+        console.log('   准备发送的完整消息:', message);
+        console.log('   message.type:', message.type);
+        console.log('   message.prompt.id:', message.prompt.id);
+        console.log('   message.prompt.pin:', message.prompt.pin, '类型:', typeof message.prompt.pin);
+        console.log('   message.username:', message.username, '类型:', typeof message.username);
+        
+        const result = await new Promise((resolve, reject) => {
+            console.log('   📤 发送消息到后台...');
+            chrome.runtime.sendMessage(
+                message,
+                (response) => {
+                    console.log('   📥 收到updatePrompt响应:', response);
+                    if (chrome.runtime.lastError) {
+                        console.error('❌ updatePrompt消息发送错误:', chrome.runtime.lastError);
+                        reject(new Error(chrome.runtime.lastError.message));
+                    } else {
+                        resolve(response);
+                    }
+                }
+            );
+        });
+        console.log('✅ 消息发送成功，响应:', result);
+        logPinAction('UPDATE_RESULT', { result });
+        
+        if (result.status === 'success') {
+            // 更新本地提示词列表，只更新统一的pin字段
+            const index = prompts.findIndex(p => p.id === promptId);
+            if (index !== -1) {
+                prompts[index].pin = newPinValue;
+                logPinAction('LOCAL_UPDATE', { index, newPinValue, updatedFields: ['pin'] });
+            }
+            
+            // 重新渲染提示词列表
+            renderPrompts();
+            logPinAction('RENDER_LIST', { message: '提示词列表已重新渲染' });
+            
+            // 显示成功通知
+            const message = newPinValue === '1' ? '提示词置顶成功' : '提示词取消置顶成功';
+            showNotification(message, 'success');
+            logPinAction('SUCCESS_NOTIFICATION', { message });
+        } else {
+            throw new Error(result.message || '更新失败');
+        }
+    } catch (error) {
+        logPinAction('ERROR', { error: error.message, stack: error.stack });
+        showNotification('更新失败: ' + error.message, 'error');
+    } finally {
+        logPinAction('END', { promptId });
     }
+}
+
+// 删除提示词
+async function deletePrompt(promptId) {
+    if (!confirm('确定要删除这个提示词吗？')) {
+        return;
+    }
+    
+    try {
+        // 获取当前登录用户信息
+        const storageResult = await new Promise(resolve => chrome.storage.local.get('loggedInUser', resolve));
+        const loggedInUser = storageResult.loggedInUser;
+        console.log('当前登录用户:', loggedInUser);
+        
+        const result = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+                { type: 'deletePrompt', promptId, username: loggedInUser?.username },
+                (response) => {
+                    if (chrome.runtime.lastError) {
+                        reject(new Error(chrome.runtime.lastError.message));
+                    } else {
+                        resolve(response);
+                    }
+                }
+            );
+        });
+        
+        if (result.status === 'success') {
+            // 重新获取最新数据
+            await fetchPromptsData();
+            showNotification('提示词删除成功', 'success');
+        } else {
+            throw new Error(result.message || '删除失败');
+        }
+    } catch (error) {
+        console.error('删除提示词失败:', error);
+        showNotification('删除失败: ' + error.message, 'error');
+    }
+}
     
     // 搜索功能
     searchInput.addEventListener('input', () => {
@@ -1255,6 +1707,41 @@ async function injectPromptManager() {
     
     // 添加提示词按钮事件
     addPromptBtn.addEventListener('click', showAddPromptForm);
+    
+    // 添加一个直接测试复选框的函数
+    window.testCheckbox = function() {
+        const form = document.querySelector('#prompt-form');
+        if (!form) {
+            console.error('表单不存在');
+            return;
+        }
+        
+        const pinnedCheckbox = form.querySelector('#form-pinned');
+        console.log('=== 直接测试复选框 ===');
+        console.log('复选框元素:', pinnedCheckbox);
+        console.log('复选框是否存在:', !!pinnedCheckbox);
+        console.log('复选框的checked属性:', pinnedCheckbox.checked);
+        console.log('checked属性的类型:', typeof pinnedCheckbox.checked);
+        
+        // 模拟表单提交时的处理逻辑
+        const pinned = pinnedCheckbox.checked;
+        const finalPinned = Boolean(pinned);
+        console.log('转换后的布尔值:', finalPinned, '类型:', typeof finalPinned);
+        
+        // 模拟消息构建
+        const message = {
+            type: 'testPin',
+            prompt: {
+                pin: finalPinned
+            }
+        };
+        console.log('模拟发送的消息:', message);
+        console.log('消息中的pin值:', message.prompt.pin, '类型:', typeof message.prompt.pin);
+        
+        alert(`测试完成：\n复选框状态: ${pinnedCheckbox.checked}\n转换后布尔值: ${finalPinned}\n最终发送值: ${message.prompt.pin}`);
+    };
+    
+
     
     // 添加分类按钮事件
     addCategoryBtn.addEventListener('click', () => {
@@ -1273,7 +1760,7 @@ async function injectPromptManager() {
         
         formModal.innerHTML = `
             <h3 style="margin-top: 0; margin-bottom: 24px;">添加分类</h3>
-            <form id="category-form">
+            <form id="category-form" action="#" method="post">
                 <div class="form-group">
                     <label for="category-name">名称 *</label>
                     <input type="text" id="category-name" required>
@@ -1364,7 +1851,7 @@ async function injectPromptManager() {
     });
     
     // 关闭按钮事件
-    modal.querySelector('#prompt-close').addEventListener('click', () => {
+    const closePromptManager = () => {
         // 移除样式和弹窗
         const style = document.getElementById('prompt-manager-style');
         if (style && style.parentNode) {
@@ -1373,7 +1860,20 @@ async function injectPromptManager() {
         if (modal.parentNode) {
             modal.parentNode.removeChild(modal);
         }
-    });
+        // 移除ESC键监听
+        document.removeEventListener('keydown', escKeyHandler);
+    };
+    
+    modal.querySelector('#prompt-close').addEventListener('click', closePromptManager);
+    
+    // ESC键关闭窗口
+    const escKeyHandler = (e) => {
+        if (e.key === 'Escape') {
+            console.log('ESC键被按下，关闭提示词管理器窗口');
+            closePromptManager();
+        }
+    };
+    document.addEventListener('keydown', escKeyHandler);
     
     // 实现拖拽功能
     const dragHandle = modal.querySelector('#prompt-drag-handle');
