@@ -142,7 +142,7 @@ async function injectPromptManager() {
                         <span class="prompt-card-time">
                             ${(() => {
                                 const updateTime = prompt.updatedAt || prompt.created_at;
-                                console.log(`提示词 ${prompt.promptname} 的时间字段值:`, prompt.updatedAt, prompt.created_at, prompt.updated_at);
+                                console.log(`提示词 ${prompt.promptname} 的时间字段值:`, prompt.updatedAt, prompt.created_at);
                                 console.log(`计算的更新时间:`, updateTime);
                                 const dateObj = new Date(updateTime);
                                 console.log(`转换后的Date对象:`, dateObj);
@@ -326,7 +326,6 @@ async function injectPromptManager() {
                 prompts.forEach((prompt, index) => {
                     console.log(`提示词 ${index + 1} (${prompt.promptname}) 的字段:`);
                     console.log(`- updatedAt: ${JSON.stringify(prompt.updatedAt)}, 类型: ${typeof prompt.updatedAt}`);
-                    console.log(`- updated_at: ${JSON.stringify(prompt.updated_at)}, 类型: ${typeof prompt.updated_at}`);
                     console.log(`- createdAt: ${JSON.stringify(prompt.createdAt)}, 类型: ${typeof prompt.createdAt}`);
                     console.log(`- created_at: ${JSON.stringify(prompt.created_at)}, 类型: ${typeof prompt.created_at}`);
                     console.log(`- pin (来自Supabase): ${JSON.stringify(prompt.pin)}, 类型: ${typeof prompt.pin}`);
@@ -1084,7 +1083,6 @@ function showNotification(message, type = 'info') {
                     <h3 id="current-category-title">所有提示词</h3>
                     <div style="display: flex; gap: 10px;">
                         <button class="add-prompt-btn" id="add-prompt-btn">+ 添加提示词</button>
-                        <button style="padding: 10px 20px; background: #10b981; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s;" id="test-pin-btn">测试pin字段</button>
                     </div>
                 </div>
                 
@@ -1105,10 +1103,7 @@ function showNotification(message, type = 'info') {
     const searchInput = modal.querySelector('#prompt-search');
     const addPromptBtn = modal.querySelector('#add-prompt-btn');
     const addCategoryBtn = modal.querySelector('#add-category-btn');
-    const testPinBtn = modal.querySelector('#test-pin-btn');
     const currentCategoryTitle = modal.querySelector('#current-category-title');
-    
-
     
     // 当前选中的分类
     let currentCategoryId = 'all';
@@ -1296,7 +1291,7 @@ function showNotification(message, type = 'info') {
                             更新时间: ${new Date(prompt.updatedAt || prompt.updated_at).toLocaleString()}
                         </p>
                         <p style="margin: 5px 0; font-size: 12px; color: #64748b;">
-                            调试信息 - updatedAt: ${JSON.stringify(prompt.updatedAt)}, updated_at: ${JSON.stringify(prompt.updated_at)}
+                            调试信息 - updatedAt: ${JSON.stringify(prompt.updatedAt)}
                         </p>
                     </div>
                 </div>` : ''}
@@ -1452,7 +1447,7 @@ function showNotification(message, type = 'info') {
                     console.log('新增提示词时的pin值:', promptData.pin, '类型:', typeof promptData.pin);
                     const newPromptData = {
                         ...promptData,
-                        createdAt: timeString,
+                        created_at: timeString,
                         updatedAt: timeString
                     };
                     console.log('新增提示词的数据:', newPromptData);

@@ -16,6 +16,8 @@ async function supabaseRequest(endpoint, method = 'GET', body = null, params = {
   // 构建完整URL
   const url = `${SUPABASE_CONFIG.url}/rest/v1/${endpoint}${queryString}`;
   
+  console.log(`[Supabase] ${method} ${url}`); // 调试日志
+  
   // 构建请求选项
   const options = {
     method,
@@ -34,6 +36,8 @@ async function supabaseRequest(endpoint, method = 'GET', body = null, params = {
   try {
     const response = await fetch(url, options);
     
+    console.log(`[Supabase] 响应状态: ${response.status} ${response.statusText}`);
+    
     if (!response.ok) {
       let errorMessage;
       try {
@@ -42,6 +46,7 @@ async function supabaseRequest(endpoint, method = 'GET', body = null, params = {
       } catch {
         errorMessage = `请求失败：${response.status} ${response.statusText}`;
       }
+      console.error(`[Supabase] 请求失败: ${errorMessage}`);
       throw new Error(errorMessage);
     }
     
@@ -53,8 +58,10 @@ async function supabaseRequest(endpoint, method = 'GET', body = null, params = {
     // 尝试解析响应数据
     try {
       const data = await response.json();
+      console.log(`[Supabase] 解析到数据条数: ${Array.isArray(data) ? data.length : '非数组'}`);
       return data;
-    } catch {
+    } catch (e) {
+      console.log('[Supabase] 响应体为空或解析失败');
       return {};
     }
   } catch (error) {
@@ -108,10 +115,12 @@ const promptDB = {
 
   // 获取用户的所有提示词
   async getUserPrompts(accountId) {
+    console.log('[getUserPrompts] 开始获取, accountId:', accountId);
     const results = await supabaseRequest('prompt', 'GET', null, {
       account_id: `eq.${accountId}`,
       order: 'created_at.desc'
     });
+    console.log('[getUserPrompts] 获取到数据条数:', results?.length || 0);
     // 将数据库字段转换为应用字段
     return results.map(prompt => this._convertFromSupabase(prompt));
   },
@@ -194,7 +203,7 @@ export class Category {
     this.color = color;
     this.enabled = enabled;
     this.created_at = new Date().toISOString();
-    this.updated_at = new Date().toISOString();
+    this.updatedAt = new Date().toISOString();
   }
 }
 

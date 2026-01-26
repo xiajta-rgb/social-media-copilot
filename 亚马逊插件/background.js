@@ -931,9 +931,13 @@ async function getUserPrompts(username) {
   try {
     console.log('=== getUserPrompts函数开始 ===');
     console.log('传入的username:', username);
+    console.log('username类型:', typeof username);
     
     // 首先获取用户的ID
-    const accountResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/account?username=eq.${encodeURIComponent(username)}`, {
+    const accountUrl = `${SUPABASE_CONFIG.url}/rest/v1/account?username=eq.${encodeURIComponent(username)}`;
+    console.log('查询账户URL:', accountUrl);
+    
+    const accountResponse = await fetch(accountUrl, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -942,21 +946,31 @@ async function getUserPrompts(username) {
       }
     });
 
+    console.log('账户查询响应状态:', accountResponse.status);
+    
     if (!accountResponse.ok) {
       throw new Error(`获取用户信息失败：${accountResponse.status}`);
     }
 
     const accountData = await accountResponse.json();
+    console.log('账户查询结果:', accountData);
+    console.log('账户数据长度:', accountData?.length);
+    
     if (!accountData || accountData.length === 0) {
       throw new Error(`用户不存在`);
     }
 
     const userId = accountData[0].id;
+    console.log('获取到userId:', userId);
 
     // 然后查询该用户的提示词数据，使用account_id进行筛选
     // 明确指定要返回的字段，确保包括pin字段
+    // 注意：数据库字段名是驼峰命名 updatedAt，下划线命名 created_at
     const fields = 'id,promptname,description,type,created_at,updatedAt,pin';
-    const response = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/prompt?account_id=eq.${userId}&select=${fields}`, {
+    const promptUrl = `${SUPABASE_CONFIG.url}/rest/v1/prompt?account_id=eq.${userId}&select=${fields}`;
+    console.log('查询提示词URL:', promptUrl);
+    
+    const response = await fetch(promptUrl, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -964,6 +978,8 @@ async function getUserPrompts(username) {
         "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
       }
     });
+
+    console.log('提示词查询响应状态:', response.status);
 
     if (!response.ok) {
       // 尝试获取错误信息，如果失败则使用默认信息
@@ -981,12 +997,14 @@ async function getUserPrompts(username) {
     let data = [];
     try {
       data = await response.json();
+      console.log('解析到的提示词数据:', JSON.stringify(data));
+      console.log('提示词数量:', data?.length || 0);
     } catch (error) {
       console.error("解析提示词数据失败：", error);
       console.log("查询提示词数据成功，但响应体格式不正确");
     }
     
-    console.log("查询提示词数据成功：", data);
+    console.log("查询提示词数据成功，数据条数:", data.length);
     console.log("每个提示词的pin字段信息：");
     data.forEach((prompt, index) => {
       console.log(`提示词 ${index + 1}: id=${prompt.id}, pin=${prompt.pin}, type=${typeof prompt.pin}`);
@@ -1170,9 +1188,15 @@ async function updatePrompt(prompt) {
       }
 
       userId = accountData[0].id;
+      console.log('获取到userId:', userId);
+      console.log('准备验证记录归属，记录ID:', prompt.id, '账户ID:', userId);
       
       // 验证记录是否属于当前用户
-      const checkResponse = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/prompt?id=eq.${prompt.id}&account_id=eq.${userId}`, {
+      // 使用正确的 Supabase 语法: ?and=(id.eq.73,account_id.eq.21)
+      const checkUrl = `${SUPABASE_CONFIG.url}/rest/v1/prompt?and=(id.eq.${prompt.id},account_id.eq.${userId})`;
+      console.log('验证记录归属URL:', checkUrl);
+      
+      const checkResponse = await fetch(checkUrl, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -1181,73 +1205,57 @@ async function updatePrompt(prompt) {
         }
       });
       
+      console.log('验证记录归属响应状态:', checkResponse.status);
+      
       if (!checkResponse.ok) {
-        console.error('验证记录归属失败，响应状态:', checkResponse.status, checkResponse.statusText);
-        throw new Error('验证记录归属失败');
+        const errorText = await checkResponse.text();
+        console.error('验证记录归属失败，响应状态:', checkResponse.status, '响应内容:', errorText);
+        throw new Error('验证记录归属失败: ' + checkResponse.status);
       }
       
       const checkData = await checkResponse.json();
+      console.log('验证记录归属结果:', checkData);
+      
       if (!checkData || checkData.length === 0) {
         console.error('记录不存在或不属于当前用户，记录ID:', prompt.id, '用户ID:', userId);
-        throw new Error('无权更新此记录');
+        throw new Error('无权更新此记录：记录不存在或不属于当前用户');
       }
+      
+      console.log('✅ 记录归属验证通过');
     }
     
     // 然后更新提示词数据
     console.log('更新提示词的ID:', prompt.id, '类型:', typeof prompt.id);
-    // 构建PATCH请求URL，包含account_id条件以确保安全
+    // 构建PATCH请求URL，使用and条件确保安全
+    // 正确的Supabase语法: ?and=(id.eq.73,account_id.eq.21)
     let patchUrl = `${SUPABASE_CONFIG.url}/rest/v1/prompt?id=eq.${prompt.id}`;
     if (userId) {
-      // 如果有userId，在URL中加入account_id条件
-      patchUrl += `&account_id=eq.${userId}`;
+      patchUrl = `${SUPABASE_CONFIG.url}/rest/v1/prompt?and=(id.eq.${prompt.id},account_id.eq.${userId})`;
     }
     console.log('完整的PATCH请求URL:', patchUrl);
     
-    // 现在前端直接发送pin字段，与Supabase对应
-    console.log('接收到的prompt对象:', prompt);
-    console.log('接收到的pin字段值:', prompt.pin, '类型:', typeof prompt.pin);
-    
-    // 明确检查pin字段是否存在并确保是布尔类型
-    const hasPinField = 'pin' in prompt;
-    console.log('prompt对象是否包含pin字段:', hasPinField);
-    
-    // 将pin字段转换为字符串类型的"1"或"0"，以兼容后端的text属性
+    // 将pin字段转换为字符串类型的"1"或"0"
     const pinValue = prompt.pin === true || prompt.pin === 'true' || prompt.pin === 1 || prompt.pin === '1' ? '1' : '0';
-    console.log('转换前的pin值:', prompt.pin, '类型:', typeof prompt.pin);
-    console.log('转换后的数值:', pinValue, '类型:', typeof pinValue);
     
-    // 构建简化的请求体，只包含必要的字段（pin和更新时间）
+    // 构建请求体 - 包含所有需要更新的字段
     const requestBody = {
+      promptname: prompt.promptname,
+      description: prompt.description,
+      type: prompt.type || 'text',
       updatedAt: new Date().toISOString(),
       pin: pinValue
     };
     
-    // 确保pin字段在JSON序列化中正确表示，即使它是false
-    console.log('最终发送到数据库的请求体:', requestBody);
-    console.log('请求体中pin字段值:', requestBody.pin, '类型:', typeof requestBody.pin);
-    console.log('JSON.stringify后的请求体:', JSON.stringify(requestBody));
-    
-    console.log('构建的请求体:', requestBody);
-    console.log('请求体中的pin字段:', requestBody.pin, '类型:', typeof requestBody.pin);
-    
     console.log('=== 发送API请求开始 ===');
     console.log('请求URL:', patchUrl);
-    console.log('请求方法:', "PATCH");
-    console.log('请求头部:', {
-      "Content-Type": "application/json",
-      "apikey": "[REDACTED]",
-      "Authorization": "Bearer [REDACTED]"
-    });
-    console.log('请求体:', requestBody);
-    console.log('pin字段类型:', typeof requestBody.pin);
-    console.log('pin字段值:', requestBody.pin);
-    console.log('JSON.stringify后的请求体:', JSON.stringify(requestBody));
-    console.log('=== 发送API请求结束 ===');
+    console.log('请求体:', JSON.stringify(requestBody, null, 2));
+    console.log('=== 发送API请求开始 ===');
     
     const response = await fetch(patchUrl, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
+        "Prefer": "return=minimal",
         "apikey": SUPABASE_CONFIG.key,
         "Authorization": `Bearer ${SUPABASE_CONFIG.key}`
       },
@@ -1257,32 +1265,22 @@ async function updatePrompt(prompt) {
     console.log('=== API响应开始 (更新提示词) ===');
     console.log('响应状态:', response.status);
     console.log('响应状态文本:', response.statusText);
-    console.log('响应头部:', Object.fromEntries(response.headers));
-    console.log('=== API响应结束 ===');
-    
-    console.log('=== API响应开始 ===');
-    console.log('响应状态码:', response.status);
-    console.log('响应状态文本:', response.statusText);
-    console.log('响应头部:', Object.fromEntries(response.headers));
+    if (response.ok) {
+      console.log('✅ 更新API调用成功 - 状态码:', response.status);
+    } else {
+      console.error('❌ 更新API调用失败 - 状态码:', response.status);
+    }
     console.log('=== API响应结束 ===');
 
     if (!response.ok) {
-      // 尝试获取错误信息，如果失败则使用默认信息
       let errorMessage;
       try {
         const errorData = await response.json();
-        console.error('更新提示词API错误详情:', errorData);
-        console.error('错误状态码:', response.status);
-        console.error('请求URL:', response.url);
-        console.error('请求体:', JSON.stringify(requestBody));
+        console.error('更新提示词API错误详情:', JSON.stringify(errorData));
         errorMessage = errorData.message || JSON.stringify(errorData);
       } catch (e) {
         errorMessage = response.statusText;
-        console.error('更新提示词API请求失败:', response.status, response.statusText);
-        console.error('请求URL:', response.url);
-        console.error('请求体:', JSON.stringify(requestBody));
       }
-      console.error('更新pin字段失败:', pinValue);
       throw new Error(`更新提示词失败：${response.status} ${errorMessage}`);
     }
     
@@ -1473,6 +1471,7 @@ async function addCategory(category) {
 
     // 然后查询该用户的提示词数据，使用account_id进行筛选
     // 明确指定要返回的字段，确保包括pin字段
+    // 注意：数据库字段名是驼峰命名 updatedAt，下划线命名 created_at
     const fields = 'id,promptname,description,type,created_at,updatedAt,pin';
     // 注意：userId需要转换为字符串
     const promptUrl = `${SUPABASE_CONFIG.url}/rest/v1/prompt?account_id=eq.${String(userId)}&select=${encodeURIComponent(fields)}`;
@@ -1560,7 +1559,7 @@ async function addCategory(category) {
         color: category.color || '#6366f1',
         enabled: true,
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updatedAt: new Date().toISOString()
       })
     });
 
