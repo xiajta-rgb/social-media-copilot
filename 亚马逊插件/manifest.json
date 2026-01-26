@@ -13,44 +13,13 @@
     "notifications"
   ],
   "host_permissions": [
-    "*://*.amazon.com/*",
-    "*://*.amazon.co.uk/*",
-    "*://*.amazon.de/*",
-    "*://*.amazon.fr/*",
-    "*://*.amazon.es/*",
-    "*://*.amazon.it/*",
-    "*://*.amazon.co.jp/*",
-    "*://*.amazon.cn/*",
-    "*://*.amazon.ca/*",
-    "*://*.amazon.com.au/*",
-    "*://*.amazon.in/*",
-    "*://*.amazon.sg/*",
-    "*://*.amazon.ae/*",
-    "*://*.amazon.com.mx/*",
-    "*://*.amazon.com.br/*",
-    "*://*.amazon.nl/*",
-    "https://www.kdocs.cn/api/v3/*",
-    "https://xarrfzqxwpuurjrsaant.supabase.co/*"
+    "<all_urls>"
   ],
   "content_scripts": [
     {
       "matches": [
-        "*://*.amazon.com/*",
-        "*://*.amazon.co.uk/*",
-        "*://*.amazon.de/*",
-        "*://*.amazon.fr/*",
-        "*://*.amazon.es/*",
-        "*://*.amazon.it/*",
-        "*://*.amazon.co.jp/*",
-        "*://*.amazon.cn/*",
-        "*://*.amazon.ca/*",
-        "*://*.amazon.com.au/*",
-        "*://*.amazon.in/*",
-        "*://*.amazon.sg/*",
-        "*://*.amazon.ae/*",
-        "*://*.amazon.com.mx/*",
-        "*://*.amazon.com.br/*",
-        "*://*.amazon.nl/*"
+        "<all_urls>",
+        "*://www.doubao.com/*"
       ],
       "js": [
         "content-scripts/main.js"

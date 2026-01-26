@@ -525,6 +525,9 @@ console.log('亚马逊插件Content Script已加载');
 let isPromptSearchOpen = false;
 let lastInputValue = '';
 let contentEditableValuesMap = new WeakMap();
+let promptsCache = null;
+let promptsCacheTime = 0;
+const PROMPTS_CACHE_DURATION = 60000;
 
 // 显示提示词搜索界面
 async function showPromptSearch(force = false) {
@@ -534,16 +537,13 @@ async function showPromptSearch(force = false) {
     isPromptSearchOpen = true;
     console.log('准备打开提示词搜索界面...', { force });
     
-    // 获取当前聚焦的输入框
     let targetElement = document.activeElement;
     let isTargetValid = false;
     
-    // 检查目标元素是否为有效的输入元素
     if (targetElement && (targetElement.tagName === 'INPUT' || targetElement.tagName === 'TEXTAREA' || 
        (targetElement instanceof HTMLElement && targetElement.getAttribute('contenteditable') === 'true'))) {
       isTargetValid = true;
     } else if (force) {
-      // 如果是强制唤醒，尝试查找页面上的第一个输入框
       console.log('强制唤醒模式，尝试查找页面上的输入框...');
       targetElement = document.querySelector('input, textarea, [contenteditable="true"]');
       
@@ -552,34 +552,45 @@ async function showPromptSearch(force = false) {
         isTargetValid = true;
       } else {
         console.log('未找到输入框，将创建临时输入区域');
-        // 如果没有找到输入框，将使用临时输入区域（由renderPromptSearch处理）
-        isTargetValid = true; // 强制为true，让renderPromptSearch处理
+        isTargetValid = true;
       }
     }
     
     if (!isTargetValid) {
-      alert('请先点击输入框或使用快捷键强制唤醒');
-      isPromptSearchOpen = false;
-      return;
+      console.log('未检测到有效输入框，将创建临时输入区域');
+      targetElement = null;
     }
     
-    // 从background获取提示词数据
-    const promptsResult = await new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        { type: 'getUserPrompts', getLoggedInUser: true },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else {
-            resolve(response);
-          }
-        }
-      );
-    });
+    let promptsData = null;
     
-    if (promptsResult.status === 'success' && promptsResult.data && promptsResult.data.length > 0) {
-      console.log('获取到提示词数据:', promptsResult.data.length);
-      await renderPromptSearch(promptsResult.data, targetElement);
+    if (promptsCache && (Date.now() - promptsCacheTime) < PROMPTS_CACHE_DURATION) {
+      console.log('使用缓存的提示词数据');
+      promptsData = promptsCache;
+    } else {
+      console.log('获取提示词数据...');
+      promptsData = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          { type: 'getUserPrompts', getLoggedInUser: true },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else {
+              resolve(response);
+            }
+          }
+        );
+      });
+      
+      if (promptsData && promptsData.data) {
+        promptsCache = promptsData;
+        promptsCacheTime = Date.now();
+        console.log('提示词数据已缓存');
+      }
+    }
+    
+    if (promptsData && promptsData.status === 'success' && promptsData.data && promptsData.data.length > 0) {
+      console.log('获取到提示词数据:', promptsData.data.length);
+      await renderPromptSearch(promptsData.data, targetElement);
     } else {
       showNotification('未找到提示词数据', 'error');
       isPromptSearchOpen = false;
@@ -1180,47 +1191,60 @@ function renderPromptSearch(prompts, targetElement) {
     
     // 插入提示词到输入框
     function insertPromptContent(content, targetElement) {
+      if (!targetElement) return;
+      
       if (targetElement.tagName === 'INPUT' || targetElement.tagName === 'TEXTAREA') {
-        // 标准输入框
         const startPos = targetElement.selectionStart;
         const endPos = targetElement.selectionEnd;
         const value = targetElement.value;
         
-        // 移除最后输入的 /p
         if (value.toLowerCase().endsWith('/p')) {
           targetElement.value = value.slice(0, -2) + content;
         } else {
           targetElement.value = value.substring(0, startPos) + content + value.substring(endPos);
         }
         
-        // 设置光标位置
         const newPos = startPos + content.length;
         targetElement.setSelectionRange(newPos, newPos);
         targetElement.focus();
-      } else if (targetElement instanceof HTMLElement && targetElement.getAttribute('contenteditable') === 'true') {
-        // contenteditable元素
-        const selection = window.getSelection();
-        const range = selection.getRangeAt(0);
         
-        // 移除最后输入的 /p
-        const lastTwoChars = targetElement.textContent.slice(-2);
-        if (lastTwoChars.toLowerCase() === '/p') {
-          range.setStart(targetElement.firstChild, targetElement.textContent.length - 2);
-          range.setEnd(targetElement.firstChild, targetElement.textContent.length);
+        targetElement.dispatchEvent(new Event('input', { bubbles: true }));
+        targetElement.dispatchEvent(new Event('change', { bubbles: true }));
+      } else if (targetElement.isContentEditable || targetElement.getAttribute('contenteditable') === 'true') {
+        targetElement.focus();
+        
+        const selection = window.getSelection();
+        let range = selection.rangeCount > 0 ? selection.getRangeAt(0) : document.createRange();
+        
+        if (range.startContainer.nodeType === Node.TEXT_NODE) {
+          const textContent = range.startContainer.textContent;
+          const prefix = textContent.slice(0, range.startOffset);
+          const suffix = textContent.slice(range.endOffset);
+          
+          if (prefix.toLowerCase().endsWith('/p')) {
+            range.startContainer.textContent = prefix.slice(0, -2) + content + suffix;
+          } else {
+            range.startContainer.textContent = prefix + content + suffix;
+          }
+          
+          const newPos = prefix.length + content.length;
+          range.setStart(range.startContainer, newPos);
+          range.setEnd(range.startContainer, newPos);
+          
+          selection.removeAllRanges();
+          selection.addRange(range);
+        } else {
+          const textNode = document.createTextNode(content);
           range.deleteContents();
+          range.insertNode(textNode);
+          
+          range.setStartAfter(textNode);
+          range.setEndAfter(textNode);
+          selection.removeAllRanges();
+          selection.addRange(range);
         }
         
-        // 插入内容
-        const textNode = document.createTextNode(content);
-        range.insertNode(textNode);
-        
-        // 设置光标位置
-        range.setStartAfter(textNode);
-        range.setEndAfter(textNode);
-        selection.removeAllRanges();
-        selection.addRange(range);
-        
-        targetElement.focus();
+        targetElement.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: content }));
       }
     }
     
@@ -1405,7 +1429,7 @@ function addKeyboardListener() {
   
   const handleKeyDown = (event) => {
     // 检查是否按下了Ctrl+Shift+Q
-    if (event.ctrlKey && event.shiftKey && event.key === 'Q') {
+    if (event.ctrlKey && event.shiftKey && (event.key === 'Q' || event.key === 'q')) {
       event.preventDefault();
       console.log('直接键盘事件触发快捷键 Ctrl+Shift+Q');
       showPromptSearch(true);

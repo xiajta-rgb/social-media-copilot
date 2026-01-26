@@ -44,124 +44,54 @@ checkShortcutRegistration();
 
 // 处理快捷键命令
 chrome.commands.onCommand.addListener(async (command) => {
-  console.log('收到快捷键命令:', command);
+  console.log('[快捷键] 收到命令:', command);
   
   if (command === 'open-search') {
+    console.log('[快捷键] 开始处理 open-search');
+    
     try {
-      // 获取当前活动标签页
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      console.log('当前活动标签页:', tabs);
+      console.log('[快捷键] 标签页查询结果:', tabs);
       
-      if (tabs.length === 0) {
-        console.error('未找到活动标签页');
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icons/icon128.png',
-          title: '提示词搜索',
-          message: '未找到活动标签页，请尝试在浏览器窗口中使用。'
-        });
+      if (!tabs || tabs.length === 0) {
+        console.error('[快捷键] 未找到活动标签页');
         return;
       }
       
-      const activeTab = tabs[0];
-      if (!activeTab.id) {
-        console.error('活动标签页没有ID');
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icons/icon128.png',
-          title: '提示词搜索',
-          message: '标签页ID无效，请刷新页面后重试。'
-        });
+      const tab = tabs[0];
+      console.log('[快捷键] 当前标签页 ID:', tab.id, 'URL:', tab.url);
+      
+      // 检查特殊页面
+      if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:'))) {
+        console.log('[快捷键] 特殊页面，跳过');
         return;
       }
       
-      console.log('向标签页发送消息，标签页ID:', activeTab.id, 'URL:', activeTab.url);
-      
-      // 向内容脚本发送消息，支持 force 参数以忽略输入框限制
-      const response = await chrome.tabs.sendMessage(activeTab.id, { 
-        type: 'open-prompt-search',
-        action: 'open-prompt-search',
-        force: true // 强制唤醒，忽略输入框限制
-      });
-      
-      console.log('收到内容脚本的响应:', response);
-      
-      // 如果内容脚本没有响应，可能是因为它没有加载
-      if (!response) {
-        console.warn('未收到内容脚本的响应，可能content script没有在该页面加载');
+      // 发送消息
+      try {
+        const response = await chrome.tabs.sendMessage(tab.id, { type: 'open-prompt-search', force: true });
+        console.log('[快捷键] 消息发送成功:', response);
+      } catch (sendError) {
+        console.log('[快捷键] 消息失败，尝试注入:', sendError.message);
         
-        // 检查当前页面是否是亚马逊页面
-        if (activeTab.url && activeTab.url.includes('amazon')) {
-          // 尝试注入content script
-          console.log('尝试手动注入content script到页面:', activeTab.url);
-          try {
-            await chrome.scripting.executeScript({
-              target: { tabId: activeTab.id },
-              files: ['content-scripts/main.js']
-            });
-            console.log('content script注入成功！');
-            
-            // 等待一小段时间让脚本加载
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // 再次尝试发送消息
-            const secondResponse = await chrome.tabs.sendMessage(activeTab.id, { 
-              type: 'open-prompt-search',
-              action: 'open-prompt-search',
-              force: true
-            });
-            
-            console.log('注入后收到的响应:', secondResponse);
-            
-            if (secondResponse) {
-              console.log('提示词搜索界面已成功打开！');
-            } else {
-              console.warn('注入脚本后仍未收到响应');
-              chrome.notifications.create({
-                type: 'basic',
-                iconUrl: 'icons/icon128.png',
-                title: '提示词搜索',
-                message: '已注入脚本，但仍无法唤醒，请刷新页面后重试。'
-              });
-            }
-          } catch (injectError) {
-            console.error('注入content script时出错:', injectError);
-            console.error('错误详情:', JSON.stringify(injectError, Object.getOwnPropertyNames(injectError)));
-            chrome.notifications.create({
-              type: 'basic',
-              iconUrl: 'icons/icon128.png',
-              title: '提示词搜索',
-              message: '无法注入脚本，请检查页面权限。'
-            });
-          }
-        } else {
-          chrome.notifications.create({
-            type: 'basic',
-            iconUrl: 'icons/icon128.png',
-            title: '提示词搜索',
-            message: '请在亚马逊网站上使用此功能。'
+        try {
+          const result = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content-scripts/main.js']
           });
+          console.log('[快捷键] 注入结果:', result);
+          
+          await new Promise(r => setTimeout(r, 1000));
+          
+          const response2 = await chrome.tabs.sendMessage(tab.id, { type: 'open-prompt-search', force: true });
+          console.log('[快捷键] 注入后成功:', response2);
+        } catch (injectError) {
+          console.error('[快捷键] 注入失败:', injectError.message);
+          console.error('[快捷键] 注入详细错误:', injectError);
         }
       }
     } catch (error) {
-      console.error('处理快捷键命令时出错:', error);
-      console.error('错误堆栈:', error.stack);
-      
-      // 根据错误类型显示不同的通知
-      let errorMessage = '无法在当前页面唤醒提示词搜索功能';
-      
-      if (error.message.includes('Could not establish connection')) {
-        errorMessage = '未找到内容脚本，请刷新页面或确保在亚马逊网站上使用。';
-      } else if (error.message.includes('No tab with id')) {
-        errorMessage = '标签页不存在，请刷新页面后重试。';
-      }
-      
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon128.png',
-        title: '提示词搜索',
-        message: errorMessage
-      });
+      console.error('[快捷键] 处理出错:', error.message);
     }
   }
 });
@@ -169,14 +99,29 @@ chrome.commands.onCommand.addListener(async (command) => {
 // 支持从插件图标点击唤醒
 try {
   chrome.action.onClicked.addListener(async (tab) => {
-    if (tab.id) {
-      // 向当前标签页发送消息，强制唤醒提示词搜索界面
-      await chrome.tabs.sendMessage(tab.id, { 
-        type: 'open-prompt-search',
-        action: 'open-prompt-search',
-        force: true
-      });
-      console.log('通过插件图标点击唤醒提示词搜索界面');
+    console.log('[图标点击] 收到点击事件', tab);
+    if (!tab.id) return;
+    
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'open-prompt-search', force: true });
+      console.log('[图标点击] 成功');
+    } catch (error) {
+      console.log('[图标点击] 失败，尝试注入:', error.message);
+      
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content-scripts/main.js']
+        });
+        console.log('[图标点击] 注入成功');
+        
+        await new Promise(r => setTimeout(r, 1000));
+        
+        await chrome.tabs.sendMessage(tab.id, { type: 'open-prompt-search', force: true });
+        console.log('[图标点击] 注入后成功');
+      } catch (injectError) {
+        console.error('[图标点击] 注入失败:', injectError.message);
+      }
     }
   });
 } catch (error) {
